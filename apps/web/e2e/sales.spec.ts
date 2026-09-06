@@ -141,14 +141,21 @@ test.describe.serial('Ventas y cobros', () => {
   });
 
   test('el filtro por estado de pago responde', async ({ page }) => {
+    // Por código, no por conteo. "La única venta de esta empresa" dejó de ser
+    // cierto en cuanto processed-sale y bulk-sales empezaron a vender contra la
+    // misma empresa; hoy pasaba sólo porque ninguna de ellas cobra. Lo que el
+    // filtro tiene que hacer es incluir o excluir **esta** venta.
+    const data = fixture();
+    const code = await saleCode(data.clientName, TOTAL);
+    const row = page.locator(`[data-testid="sale-row"][data-code="${code}"]`);
+
     await page.goto('/dashboard/sales');
 
     await page.getByRole('tab', { name: 'Pagados' }).click();
-    // The only sale in this company is partially paid, so "paid" must be empty.
-    await expect(page.getByTestId('sales-empty')).toBeVisible();
+    await expect(row).toHaveCount(0);
 
     await page.getByRole('tab', { name: 'Parciales' }).click();
-    await expect(page.getByTestId('sale-row')).toHaveCount(1);
+    await expect(row).toBeVisible();
   });
 });
 

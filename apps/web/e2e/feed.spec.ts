@@ -29,9 +29,16 @@ test.describe.serial('Alimento', () => {
   test('un consumo descuenta del inventario', async ({ page }) => {
     const data = fixture();
 
-    // Hace falta que haya alimento en el galpón para poder consumirlo.
+    // `global-setup` recibe 30 kg en este galpón antes de que corra ningún
+    // spec, así que "no hay alimento" no es una condición del entorno: es la
+    // entrada recibida que no movió el inventario, justo la regresión que este
+    // archivo existe para atrapar. Era un `test.skip`, y eso la convertía en
+    // una corrida en verde.
     const stockBefore = await stockOf(data.feedProductId);
-    test.skip(stockBefore < CONSUMED_KG, 'no hay alimento en inventario para consumir');
+    expect(
+      stockBefore,
+      'global-setup recibió 30 kg de alimento; si no están, recibir la entrada no movió el inventario',
+    ).toBeGreaterThanOrEqual(CONSUMED_KG);
 
     await page.goto('/dashboard/consumptions');
     await page.getByTestId('new-consumption').click();

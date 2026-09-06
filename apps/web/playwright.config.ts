@@ -9,9 +9,21 @@ export default defineConfig({
   // works, which is what these tests are supposed to imitate.
   workers: 1,
   fullyParallel: false,
+  // A `test.only` left in a spec shrinks the run to one test and CI still
+  // reports green. On a laptop that is a convenience; here it is a lie.
+  forbidOnly: !!process.env.CI,
+  // One retry, CI only. It is not free: the suite is serial and stateful, so a
+  // retry runs against whatever the failed attempt already wrote. It earns its
+  // place against runner failures — a cold Vite chunk on the first navigation —
+  // not against a real bug, which a second retry would only paper over.
+  retries: process.env.CI ? 1 : 0,
   timeout: 45_000,
   expect: { timeout: 10_000 },
-  reporter: process.env.CI ? [['github'], ['list']] : [['list']],
+  // `github` annotates the failing line in the diff; `html` is what gets
+  // uploaded and the only way to open a trace once the runner is gone.
+  reporter: process.env.CI
+    ? [['github'], ['list'], ['html', { open: 'never' }]]
+    : [['list']],
   globalSetup: './e2e/global-setup.ts',
 
   use: {
@@ -28,12 +40,13 @@ export default defineConfig({
 
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 
-  // Reuses whatever is already running — `make dev` during development, a fresh
-  // server in CI. Starting a second one on the same port would just fail.
+  // Reuses `make dev` during development. In CI there is nothing legitimate to
+  // reuse: `true` would let Playwright adopt a server left over from an earlier
+  // step — serving an earlier commit's bundle — instead of failing.
   webServer: {
     command: 'pnpm exec vite --port 3002',
     url: WEB_URL,
-    reuseExistingServer: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },
 });

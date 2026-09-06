@@ -1,0 +1,214 @@
+# The suites that need a real stack behind them: the 82 Playwright specs and the
+# 418 assertions in scripts/check-api.sh. Both drive a running API against a real
+# Postgres, which is why they are not in security.yml — that workflow is for what
+# can be demanded of a bare checkout, and it also runs weekly on a schedule,
+# which tells you nothing new about a browser test.
+#
+# This job is deliberately credential-free. It is given no repository secret of
+# any kind: the database is a service container that dies with the run, and the
+# JWT secrets are generated here with openssl. Nothing it can print, trace or
+# upload can be a production credential, because it never holds one. Keep it that
+# way — see the note on the artifact step.
+
+name: End-to-end
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A second push to the same branch makes the first run's answer worthless.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright and API check suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    services:
+      postgres:
+        # Same major as docker-compose.yml. Migrations are version sensitive and
+        # there is no reason for CI to exercise a different one.
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cryotech
+          POSTGRES_PASSWORD: cryotech
+          POSTGRES_DB: cryotech
+        # Steps run on the host, not inside a container, so the `postgres`
+        # hostname that docker-compose.yml uses would not resolve here.
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cryotech"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Throwaway credentials for a container that lives twenty minutes.
+      # check-security.sh reads DATABASE_URL from the environment before it falls
+      # back to the file, and its `docker compose ps` fallback cannot work here:
+      # a service container belongs to no Compose project.
+      DATABASE_URL: postgresql://cryotech:cryotech@localhost:5432/cryotech
+      # NODE_ENV is deliberately unset so env.schema.ts defaults it to
+      # `development`. Under `production` three things break at once: register
+      # answers 403 (RegistrationEnabledGuard) and global-setup's first call is a
+      # register; the loopback exemption in LoopbackAwareThrottlerGuard turns off
+      # and 5 registrations per 15 minutes is nowhere near enough for this suite;
+      # and AssistantDevController is not mounted, so check-security.sh gets a
+      # 404 where it asserts a 403.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # check-security.sh reaches the database through `psql`, and its only
+      # fallback is `docker compose ps -q postgres`, which finds nothing when
+      # Postgres is a service container. Without the client it cannot resolve the
+      # victim company and cannot delete the throwaway user it registers — and it
+      # says so with a bare "usage:". Installed explicitly rather than trusting
+      # the runner image, so an image bump fails here with a clear message.
+      - name: postgresql-client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+          psql --version
+
+      # ~3.3 MB of Spanish traineddata that tesseract.js fetches from jsdelivr on
+      # the first OCR and caches at `${cwd}/spa.traineddata`. check-assistant-e2e
+      # asserts the receipts resolve on the local OCR tier, so it is not
+      # optional, and a jsdelivr outage should not be able to turn this red.
+      - uses: actions/cache@v4
+        with:
+          path: apps/api/spa.traineddata
+          key: tesseract-spa-4.0.0
+
+      - run: pnpm --filter @cryotech/api exec prisma generate
+
+      # The API resolves @cryotech/shared-types to dist/index.js at run time.
+      - run: pnpm --filter @cryotech/shared-types build
+
+      - run: pnpm --filter @cryotech/api exec prisma migrate deploy
+
+      - run: pnpm --filter @cryotech/api exec nest build
+
+      # ConfigModule would be satisfied by the environment alone — process.env
+      # wins over the file — but scripts/check-api.sh refuses to run without this
+      # file and reads PORT out of it.
+      #
+      # The secrets are generated per run and never leave the runner. env.schema
+      # rejects anything under 32 characters, anything matching a placeholder
+      # literal, and an access secret equal to the refresh one.
+      - name: Write apps/api/.env
+        run: |
+          umask 077
+          access="$(openssl rand -base64 48 | tr -d '\n')"
+          refresh="$(openssl rand -base64 48 | tr -d '\n')"
+          {
+            echo "DATABASE_URL=${DATABASE_URL}"
+            echo "JWT_ACCESS_SECRET=${access}"
+            echo "JWT_REFRESH_SECRET=${refresh}"
+            echo "JWT_ACCESS_EXPIRATION=15m"
+            echo "JWT_REFRESH_EXPIRATION=7d"
+            echo "PORT=3011"
+            echo "CORS_ORIGIN=http://localhost:3002"
+            # Four suites price in bolivares and need a rate; without this they
+            # fail on "No hay tasa BCV disponible".
+            echo "EXCHANGE_RATE_FALLBACK=250"
+            # The scrape is pointed at a closed port so it fails in a millisecond
+            # with ECONNREFUSED instead of spending the 10s default on
+            # bcv.org.ve. Deterministic and offline: every suite sees 250, every
+            # run. Reaching the real BCV would make this build depend on a third
+            # party's markup.
+            echo "BCV_URL=http://127.0.0.1:9/"
+            echo "BCV_TIMEOUT_MS=1000"
+            # Belt and braces: without a key the Claude extractor already refuses
+            # to construct a client, but this states the rule — nothing in CI
+            # spends money or sends a receipt to a third party.
+            echo "ASSISTANT_FAKE_AI=true"
+          } > apps/api/.env
+
+      # From apps/api on purpose: ConfigModule reads `${cwd}/.env`, and
+      # tesseract.js caches spa.traineddata in `${cwd}` — the same directory
+      # check-api.sh cds into, so the model is downloaded once for the whole run.
+      - name: Start the API
+        working-directory: apps/api
+        run: |
+          nohup node dist/main > "$RUNNER_TEMP/api.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/api.pid"
+
+      - name: Wait for /api/health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 2 http://localhost:3011/api/health | grep -q '"ok":true'; then
+              echo "API up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::The API never answered on :3011 within 60s"
+          tail -n 120 "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: Install Chromium
+        run: pnpm --filter @cryotech/web exec playwright install --with-deps chromium
+
+      # Playwright starts Vite itself; the API is already up. The browser reaches
+      # it through Vite's /api proxy, so every request arrives on loopback and
+      # the throttler exemption applies — which is what makes 82 tests plus 418
+      # assertions possible without tripping the 120/min ceiling.
+      - name: Playwright
+        run: pnpm e2e
+
+      # Not `always()`: on a cancelled run there is nothing to learn. But a red
+      # Playwright must not hide a red check-api — they cover different code.
+      - name: API check suites
+        if: '!cancelled()'
+        run: bash scripts/check-api.sh
+
+      - name: API log
+        if: failure()
+        run: tail -n 300 "$RUNNER_TEMP/api.log"
+
+      # Traces and screenshots — and yes, they contain session tokens, the
+      # register bodies with the generated password in plaintext, and the whole
+      # test company's books. On a public repository anyone can download this,
+      # which is exactly how the nightly pg_dump artifact once published the real
+      # database (see backup.yml).
+      #
+      # This is safe for one reason, and it is not that the data is boring: this
+      # job holds no credential that outlives it. The database is a service
+      # container destroyed with the run, the JWT secrets were generated by
+      # openssl a few steps up, and the job is given no repository secret at all.
+      # Everything in the trace is dead the moment the runner shuts down.
+      #
+      # That property is the whole safety argument. If anyone ever adds a
+      # `secrets.*` to this job — a real DATABASE_URL to reproduce a bug, an
+      # ANTHROPIC_API_KEY to exercise the AI tier — this upload goes first.
+      - name: Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

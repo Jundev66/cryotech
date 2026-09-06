@@ -8,9 +8,13 @@ botón dejó de funcionar, estos tests lo notan.
 
 ```bash
 make dev            # postgres + api + web
-pnpm e2e            # los 48 tests
+pnpm e2e            # 82 pruebas (67 `test()`, y navigation parametriza 16 rutas)
 pnpm e2e:clean      # borra las empresas de prueba que se acumularon
 ```
+
+También corren en CI: `.github/workflows/e2e.yml` levanta Postgres, migra,
+arranca la API y ejecuta esto en cada PR. Antes se lanzaban a mano, así que no
+bloqueaban nada.
 
 Desde `apps/web` también sirven `pnpm e2e:ui` (modo interactivo) y
 `pnpm e2e:report` (el reporte de la última corrida).
@@ -52,6 +56,12 @@ por lo que probaba.
 | `settings.spec.ts` | Unidades, categorías y roles: crear uno y poder elegirlo en un producto |
 | `reports.spec.ts` | Los números en pantalla concuerdan con los libros; "Sin datos" solo cuando de verdad no hay |
 | `navigation.spec.ts` | Las 16 pantallas cargan sin respuestas 4xx/5xx ni estados de error |
+| `security.spec.ts` | 14 pruebas contra la API sin navegador: aislamiento entre empresas, validación de entrada, rate limiting y cabeceras |
+| `bulk-sales.spec.ts` | Varias ventas de un lote en una tanda; el lote no se sobregira aunque cada fila quepa por separado |
+| `processed-sale.spec.ts` | Vender beneficiado con el lote en cero: sale de la nevera, no del corral |
+| `company-switch.spec.ts` | Al cambiar de empresa no queda en caché ni un dato de la anterior |
+| `password-reset.spec.ts` | El dueño le cambia la contraseña a un trabajador; la vieja deja de servir |
+| `search.spec.ts` | La búsqueda encuentra por nombre, código y con acentos |
 
 ## Cómo están escritos
 

@@ -1,225 +1,108 @@
 ---
 name: testing-patterns
-description: Testing patterns for CryoTech with Vitest, React Testing Library and Playwright. TDD workflow, test organization, mocking the axios API layer. Use when writing or planning tests.
+description: Testing patterns for CryoTech — Vitest for pure logic, the check-* scripts for integration, Playwright for the browser. Use when writing or planning tests.
 ---
 
 # Testing Patterns
 
-> Testing strategy for CryoTech — Vitest + RTL + Playwright.
+> What this project actually runs, not what a generic checklist would ask for.
 
-## Test Pyramid
+There is **no React Testing Library, no MSW and no `tests/` directory** here.
+Tests live next to the code they cover, and the integration layer is a set of
+hand-written scripts rather than a runner. If a pattern you remember starts with
+"render the component and…", check first whether the tooling for it exists.
 
-```
-        /  E2E  \        Playwright — few, critical flows
-       /----------\
-      / Integration \    Vitest — hooks, API modules, services
-     /----------------\
-    /    Unit Tests     \  Vitest — schemas, utils, pure functions
-   /--------------------\
-```
+## The three layers
 
-## Setup
+| Layer | Where | Runs |
+|---|---|---|
+| **Unit** — pure functions | `*.test.ts` next to the source | `pnpm test` (Vitest), on every PR |
+| **Integration** — real API, real database | `apps/api/scripts/check-*.ts` | `scripts/check-api.sh`, in CI |
+| **E2E** — real browser | `apps/web/e2e/*.spec.ts` | `pnpm e2e` (Playwright), in CI |
 
-### Vitest Configuration
+The suffix matters: **`.test.ts` is Vitest, `.spec.ts` is Playwright**. The root
+`vitest.config.ts` only matches `.test.ts`, and its environment is `node` — there
+is no jsdom, so a `.tsx` component test would need config changes first.
 
-```typescript
-// vitest.config.ts
-import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+## Unit: what belongs here
 
-export default defineConfig({
-  plugins: [react()],
-  test: {
-    environment: 'jsdom',
-    setupFiles: ['./tests/setup.ts'],
-    include: ['tests/**/*.test.{ts,tsx}'],
-    coverage: {
-      reporter: ['text', 'html'],
-      include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/types/**', 'src/components/ui/**'],
-    },
-  },
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-});
-```
-
-### Test Setup
+Anything that needs no database and no browser. Today that is the receipt
+parsers, the batch metrics, the date helpers, the fuzzy client search and the
+enum narrowing — see `apps/api/src/modules/receipt-ocr/patterns.test.ts` and
+`packages/shared-types/src/utils/metrics.test.ts` for the house style.
 
 ```typescript
-// tests/setup.ts
-import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
-
-afterEach(() => {
-  cleanup();
-});
-```
-
-## Unit Test Patterns
-
-### Schema Validation
-
-```typescript
-// tests/unit/lib/schemas/batch.test.ts
-import { describe, it, expect } from 'vitest';
-import { batchSchema } from '@/lib/schemas/batch';
-
-describe('batchSchema', () => {
-  it('should validate a valid batch', () => {
-    const result = batchSchema.safeParse({
-      breed: 'Cobb 500',
-      initialQuantity: 100,
-      startDate: '2026-03-01',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('should reject negative quantity', () => {
-    const result = batchSchema.safeParse({
-      breed: 'Cobb 500',
-      initialQuantity: -1,
-      startDate: '2026-03-01',
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('should reject empty breed', () => {
-    const result = batchSchema.safeParse({
-      breed: '',
-      initialQuantity: 100,
-      startDate: '2026-03-01',
-    });
-    expect(result.success).toBe(false);
-  });
-});
-```
-
-### Utility Functions
-
-```typescript
-// tests/unit/lib/utils/metrics.test.ts
-import { describe, it, expect } from 'vitest';
-import { calculateFCR, calculateMortalityRate } from '@/lib/utils/metrics';
+import { describe, expect, it } from 'vitest';
+import { calculateFCR } from './metrics';
 
 describe('calculateFCR', () => {
-  it('returns correct FCR', () => {
+  it('is feed over weight gained, to two decimals', () => {
     expect(calculateFCR(180, 100)).toBe(1.8);
   });
 
-  it('returns 0 for zero weight gain', () => {
-    expect(calculateFCR(180, 0)).toBe(0);
-  });
-});
-
-describe('calculateMortalityRate', () => {
-  it('returns percentage', () => {
-    expect(calculateMortalityRate(5, 100)).toBe(5);
+  it('returns null instead of dividing by zero', () => {
+    // A batch with no weight recorded has no FCR. Reporting 0 would read as a
+    // perfect conversion, which is the opposite of "we do not know".
+    expect(calculateFCR(100, 0)).toBeNull();
   });
 });
 ```
 
-## Component Test Patterns
+Note the signature: `calculateFCR(totalFeedKg, totalWeightGainKg)` is positional
+and returns `number | null`, not an object and not `0`.
 
-```typescript
-// tests/unit/components/batch-card.test.tsx
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
-import { BatchCard } from '@/components/batches/batch-card';
+**The cheapest untested ground is the Zod schemas** in `packages/shared-types` —
+33 objects, two `.refine()` cross-field rules and nine `.default()`s, none
+exercised. They are pure, they are the contract between the API and the SPA, and
+they already fall inside the Vitest include glob.
 
-const mockBatch = {
-  id: '1',
-  breed: 'Cobb 500',
-  initial_quantity: 100,
-  status: 'breeding' as const,
-  start_date: '2026-03-01',
-};
+## Integration: the `check-*` scripts
 
-describe('BatchCard', () => {
-  it('displays breed name', () => {
-    render(<BatchCard batch={mockBatch} />);
-    expect(screen.getByText('Cobb 500')).toBeInTheDocument();
-  });
+Fourteen scripts under `apps/api/scripts/` that boot the real Nest context and
+talk to the real Postgres. They are not a test-runner suite; each declares its
+own `check(label, ok, detail)` helper, prints `  ok` / `  FAIL` lines, and
+`scripts/check-api.sh` counts them by grepping stdout.
 
-  it('displays quantity', () => {
-    render(<BatchCard batch={mockBatch} />);
-    expect(screen.getByText('100')).toBeInTheDocument();
-  });
+Two rules that were expensive to learn and are not negotiable:
 
-  it('shows breeding status badge', () => {
-    render(<BatchCard batch={mockBatch} />);
-    expect(screen.getByText(/crianza/i)).toBeInTheDocument();
-  });
-});
-```
+1. **Never against the real company.** Every suite resolves or creates
+   `ZZ Empresa de Pruebas` through `scripts/lib/test-company.ts`. Running them
+   against the real books once advanced the sale numbering fifty numbers and
+   threw the processed-bird inventory out.
+2. **Clean up in a `finally`.** Each script tracks the ids it created and deletes
+   them. `pnpm e2e:clean` is the garbage collector for whatever a crash leaves.
 
-## E2E Test Patterns (Playwright)
+Ordering inside `check-api.sh` is deliberate — `check-tenancy` runs first,
+because if isolation between companies is broken, everything measured afterwards
+may be reading contaminated data. Do not reorder the array to parallelise.
 
-```typescript
-// tests/e2e/auth.spec.ts
-import { test, expect } from '@playwright/test';
+## E2E: Playwright
 
-test.describe('Authentication', () => {
-  test('user can log in', async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('[name="email"]', 'test@example.com');
-    await page.fill('[name="password"]', 'password123');
-    await page.click('button[type="submit"]');
-    await expect(page).toHaveURL('/');
-  });
+Read `apps/web/e2e/README.md` first; it is the real specification. The three
+rules that shape every spec:
 
-  test('shows error on invalid credentials', async ({ page }) => {
-    await page.goto('/login');
-    await page.fill('[name="email"]', 'wrong@example.com');
-    await page.fill('[name="password"]', 'wrong');
-    await page.click('button[type="submit"]');
-    await expect(page.locator('.text-destructive')).toBeVisible();
-  });
-});
-```
+- **Act through the screen, verify through the API.** Everything the user does
+  goes through the browser; the result is checked with `readApi()`. Asserting
+  "one expense was recognised, not two" against a table that paginates and rounds
+  is how a test passes while the ledger is wrong.
+- **`data-testid` for what you touch, visible text or role for what you verify.**
+  A copy change that breaks a user breaks the test; a layout change does not.
+- **Wait for something to disappear, not to appear.** Several strings are already
+  on the filter tabs, so waiting for them goes green before the server does
+  anything.
 
-## Mocking the API layer
+Radix `Select` is a listbox, not a native `<select>`: `selectOption` is a no-op
+on it. Use `chooseOption()` from `e2e/fixtures.ts`.
 
-There is no Supabase and no server client to stub. The SPA reaches the API
-through `src/api/*.api.ts`, so that module is the seam: mock it and the axios
-client, the interceptors and the network all stay out of the test.
+The suite is serial and shares one company per run (`workers: 1`), so a spec that
+asserts a global count will break the day another spec writes a similar row.
+Scope assertions to the record under test — look one up by its code, as
+`sales.spec.ts` does with `saleCode()`.
 
-```typescript
-// tests/mocks/api.ts
-import { vi } from 'vitest';
+## Key rules
 
-vi.mock('@/api/sales.api', () => ({
-  salesApi: {
-    findAll: vi.fn().mockResolvedValue([]),
-    create: vi.fn().mockResolvedValue({ id: 'sale-1', code: 'SALE-0001' }),
-    remove: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-```
-
-Wrap anything using TanStack Query in a fresh `QueryClient` per test, with
-retries off — otherwise a failing query retries and the test waits for nothing.
-
-```typescript
-const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
-```
-
-On the API side, the pure logic is the cheapest to cover and the most worth
-covering: `receipt-ocr/patterns.ts` (`parseAmount`, `parseDate`,
-`parseAccountRef`) and the FCR and mortality maths in `reports.service.ts`. None
-of them need a database.
-
-## Key Testing Rules
-
-1. **Test behavior, not implementation**
-2. **One assertion per concept**
-3. **Descriptive test names** — the name IS documentation
-4. **Arrange-Act-Assert** structure
-5. **Don't mock what you don't own** excessively
-6. **Test edge cases** — empty states, max values, invalid input
+1. Test behaviour, not implementation
+2. The test name is the documentation — write it as a sentence
+3. Test the edges: empty, zero, the maximum, the invalid input
+4. Do not add a conditional `test.skip()` to dodge a missing precondition — if
+   the precondition should hold, assert it; a skip turns a regression green

@@ -55,9 +55,13 @@ export default tseslint.config(
     },
   },
 
-  // Verification scripts print their results; that is their whole output.
+  // Verification and seeding scripts print their results; that is their whole
+  // output.
   {
-    files: ['apps/api/scripts/**/*.ts', 'scripts/**/*.ts'],
+    files: ['apps/api/scripts/**/*.ts', 'scripts/**'],
+    languageOptions: {
+      globals: globals.node,
+    },
     rules: {
       'no-console': 'off',
     },

@@ -1,0 +1,64 @@
+# Puts the public demo back the way it was.
+#
+# The demo is a toy anyone can click, and people will sell twelve thousand
+# birds, empty the treasury and leave half-typed clients behind. That is fine —
+# this runs four times a day and rebuilds it. It is also what keeps the free
+# database from filling up with a year of strangers' experiments.
+#
+# It needs one secret, DEMO_PASSWORD, and only because writing the password of a
+# published login into a file feels wrong even when the login itself is
+# published in the README. Everything it can reach is a throwaway company on a
+# throwaway database; it has no access to the real deployment.
+
+name: Reset the demo
+
+on:
+  schedule:
+    # Every six hours. Long enough that a visitor's session is not wiped out
+    # under them, short enough that a mess is never on display for a whole day.
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-reset
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    name: Reseed the demo farm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DEMO_API_URL: https://cryotech-demo-api.onrender.com/api
+      DEMO_EMAIL: demo@cryotech.demo
+      DEMO_PASSWORD: ${{ secrets.DEMO_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Nothing is installed: the script uses only `fetch` and the API.
+      - name: Wake the API
+        run: |
+          # Render's free tier sleeps after 15 minutes without traffic, and the
+          # first request pays for the boot. Waking it before the seed keeps the
+          # script's own calls from timing out one by one.
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 10 "${DEMO_API_URL}/health" | grep -q '"ok":true'; then
+              echo "API up after ${i} attempts"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::The demo API never answered"
+          exit 1
+
+      - name: Reseed
+        run: node scripts/seed-demo.mjs

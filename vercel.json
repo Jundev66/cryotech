@@ -1,0 +1,49 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+
+  "//": [
+    "Vercel sirve la SPA y nada más. La API es NestJS con un cron de",
+    "@nestjs/schedule, un poller de WhatsApp en continuo y Tesseract para leer",
+    "comprobantes: nada de eso sobrevive en funciones serverless, así que sigue",
+    "en Render.",
+    "",
+    "El rewrite de /api es lo que evita tocar una línea de código: el cliente",
+    "axios usa baseURL '/api' y en el despliegue con Docker nginx hace de proxy.",
+    "Aquí lo hace Vercel, así que el navegador nunca cruza de origen y CORS no",
+    "entra en juego — que importa, porque main.ts valida un origen exacto y una",
+    "sola cadena, y las URL de preview de Vercel cambian en cada despliegue.",
+    "",
+    "El destino es la instancia de DEMOSTRACIÓN, nunca la API real: cualquiera",
+    "con el enlace vería las ventas y los clientes de la granja. Si cambias el",
+    "nombre del servicio en Render, cámbialo aquí — Vercel no interpola",
+    "variables de entorno dentro de un rewrite."
+  ],
+
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm --filter @cryotech/shared-types build && pnpm --filter @cryotech/web build",
+  "outputDirectory": "apps/web/dist",
+  "framework": "vite",
+
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://cryotech-demo-api.onrender.com/api/:path*"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=()"
+        }
+      ]
+    }
+  ]
+}

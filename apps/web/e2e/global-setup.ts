@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,12 +11,26 @@ const WEB_URL = process.env.E2E_WEB_URL ?? 'http://localhost:3002';
 
 /** Everything the suite creates carries this, so cleanup can find it. */
 export const E2E_MARKER = 'E2E';
-const E2E_PASSWORD = 'E2ePruebas.2026';
+/**
+ * A password for a throwaway account, generated per run.
+ *
+ * Never a constant in the repository: these specs register real users through
+ * `/auth/register`, and a published password is a live account waiting for
+ * whoever reads it. It satisfies the API's policy — ten characters with an
+ * upper case, a lower case and a digit.
+ */
+export function randomPassword(): string {
+  return `Zz${randomBytes(8).toString('hex')}.`;
+}
+
+const E2E_PASSWORD = randomPassword();
 
 export interface E2EFixture {
   companyId: string;
   companyName: string;
   email: string;
+  /** Only the spec that exercises the login form needs it. `.auth/` is gitignored. */
+  password: string;
   accessToken: string;
   warehouseId: string;
   batchId: string;
@@ -218,6 +233,7 @@ async function globalSetup() {
     companyId,
     companyName,
     email,
+    password: E2E_PASSWORD,
     accessToken: token,
     warehouseId: warehouse.id,
     batchId: batch.id,

@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { fixture } from './fixtures';
+import { randomPassword } from './global-setup';
 
 /**
  * Autorización, contra la API directamente.
@@ -17,7 +18,7 @@ import { fixture } from './fixtures';
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:3011/api';
 
 /** Contraseña del intruso. Cumple la política: 10+, mayúscula, minúscula, dígito. */
-const OUTSIDER_PASSWORD = 'Intruso.E2E.2026';
+const OUTSIDER_PASSWORD = randomPassword();
 
 interface Session {
   token: string;

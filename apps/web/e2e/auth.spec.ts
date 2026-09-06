@@ -12,7 +12,6 @@ test.describe('Entrar', () => {
   // Sin `storageState`: aquí se trata precisamente de no tener sesión.
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  const PASSWORD = 'E2ePruebas.2026';
 
   test('sin sesión, cualquier pantalla manda al login', async ({ page }) => {
     await page.goto('/dashboard/sales');
@@ -24,7 +23,7 @@ test.describe('Entrar', () => {
 
     await page.goto('/login');
     await page.getByLabel('Correo electronico').fill(data.email);
-    await page.getByLabel('Contrasena').fill(PASSWORD);
+    await page.getByLabel('Contrasena').fill(data.password);
     await page.getByRole('button', { name: 'Iniciar sesion' }).click();
 
     await expect(page).toHaveURL(/\/dashboard/);
@@ -45,7 +44,7 @@ test.describe('Entrar', () => {
 
     await page.goto('/login');
     await page.getByLabel('Correo electronico').fill(shouted);
-    await page.getByLabel('Contrasena').fill(PASSWORD);
+    await page.getByLabel('Contrasena').fill(data.password);
     await page.getByRole('button', { name: 'Iniciar sesion' }).click();
 
     await expect(page).toHaveURL(/\/dashboard/);

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { fixture } from './fixtures';
+import { randomPassword } from './global-setup';
 
 /**
  * La recuperación de contraseña que hay: el dueño se la cambia al trabajador.
@@ -15,8 +16,8 @@ import { fixture } from './fixtures';
 const API_URL = process.env.E2E_API_URL ?? 'http://localhost:3011/api';
 
 test.describe.serial('Cambiar la contraseña de un trabajador', () => {
-  const OLD_PASSWORD = 'TrabajadorZZ.2026';
-  const NEW_PASSWORD = 'CambiadaZZ.2026';
+  const OLD_PASSWORD = randomPassword();
+  const NEW_PASSWORD = randomPassword();
 
   let workerEmail = '';
 

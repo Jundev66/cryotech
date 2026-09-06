@@ -7,6 +7,7 @@
  *   node apps/web/scripts/screenshots.mjs
  */
 import { chromium } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +17,8 @@ const OUT = join(HERE, '..', '..', '..', 'docs', 'screenshots');
 
 const API = process.env.SHOTS_API_URL ?? 'http://localhost:3011/api';
 const WEB = process.env.SHOTS_WEB_URL ?? 'http://localhost:3002';
-const PASSWORD = 'Capturas.2026';
+// Generated per run: this seeds a real account through /auth/register.
+const PASSWORD = `Zz${randomBytes(8).toString('hex')}.`;
 const RATE = 250;
 
 const stamp = Date.now();

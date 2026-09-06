@@ -1,0 +1,86 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # A dependency that is safe today is not safe forever; the weekly run is
+    # what catches an advisory published against code nobody touched.
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Fails the build on high or critical. Moderate and below are reported
+      # in the log without blocking — a transitive dev-only moderate should not
+      # stop a fix from shipping, but it should still be visible.
+      - name: Audit (fails on high/critical)
+        run: pnpm audit --audit-level=high
+
+      - name: Full audit (informational)
+        if: always()
+        run: pnpm audit || true
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks needs history to scan commits, not just the tree.
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  quality:
+    name: Types, lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The Prisma client is generated, and type-check fails without it.
+      - run: pnpm --filter @cryotech/api exec prisma generate
+
+      - run: pnpm --filter @cryotech/shared-types build
+
+      - run: pnpm type-check
+
+      - run: pnpm lint
+
+      # Unit only, no database: what can be demanded on every PR. The
+      # `apps/api/scripts/check-*` suites and the Playwright specs need the API
+      # and Postgres running, and are launched by hand.
+      - run: pnpm test

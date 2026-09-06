@@ -1,0 +1,17 @@
+{
+  "name": "@cryotech/webhook-buffer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create cryotech-webhook-buffer",
+    "db:migrate": "wrangler d1 execute cryotech-webhook-buffer --remote --file=./schema.sql",
+    "db:migrate:local": "wrangler d1 execute cryotech-webhook-buffer --local --file=./schema.sql",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "typescript": "^5.9.3"
+  }
+}

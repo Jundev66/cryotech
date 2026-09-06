@@ -1,0 +1,127 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "BATCH_PLAN",
+      "title": "Planificar lote",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "warehouses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "w1",
+              "title": "Galpón 1",
+              "description": "Capacidad 500"
+            }
+          ]
+        },
+        "breeds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "Cobb 500",
+              "title": "Cobb 500"
+            }
+          ]
+        },
+        "min_date": {
+          "type": "string",
+          "__example__": "2026-05-10"
+        },
+        "max_date": {
+          "type": "string",
+          "__example__": "2026-11-08"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "batch_plan_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "warehouse",
+                "label": "Galpón",
+                "required": true,
+                "data-source": "${data.warehouses}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "breed",
+                "label": "Raza",
+                "required": true,
+                "data-source": "${data.breeds}"
+              },
+              {
+                "type": "TextInput",
+                "name": "initial_quantity",
+                "label": "Cantidad de pollitos",
+                "input-type": "number",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "price_per_chick",
+                "label": "Precio por pollito (Bs)",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "CalendarPicker",
+                "name": "start_date",
+                "label": "Fecha de entrada",
+                "mode": "single",
+                "required": true,
+                "min-date": "${data.min_date}",
+                "max-date": "${data.max_date}"
+              },
+              {
+                "type": "Footer",
+                "label": "Planificar lote",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "warehouse": "${form.warehouse}",
+                    "breed": "${form.breed}",
+                    "initial_quantity": "${form.initial_quantity}",
+                    "price_per_chick": "${form.price_per_chick}",
+                    "start_date": "${form.start_date}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

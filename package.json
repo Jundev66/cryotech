@@ -1,0 +1,47 @@
+{
+  "name": "cryotech",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "turbo type-check",
+    "db:migrate": "pnpm --filter @cryotech/api exec prisma migrate dev",
+    "db:generate": "pnpm --filter @cryotech/api exec prisma generate",
+    "db:studio": "pnpm --filter @cryotech/api exec prisma studio",
+    "e2e": "pnpm --filter @cryotech/web e2e",
+    "e2e:clean": "pnpm --filter @cryotech/api e2e:clean --apply"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.6",
+    "globals": "^17.12.0",
+    "turbo": "^2.10.9",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^5.0.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "//": "Transitivos con CVE que sus paquetes padre todavía no han subido. Salvo `deepmerge-ts`, todos se quedan dentro del mismo major y no cambian ninguna API; ese sube de 7 a 8 porque el aviso no tiene arreglo en la 7, y solo lo usa el CLI de Prisma (`generate` y `migrate` verificados con el override puesto). Revisar en cada `pnpm audit`: cuando el padre publique la versión corregida, el override sobra.",
+    "overrides": {
+      "fast-uri@3": "^3.1.6",
+      "browserslist": "^4.28.7",
+      "deepmerge-ts": "^8.0.0",
+      "qs": "^6.15.3",
+      "brace-expansion@1": "^1.1.18",
+      "brace-expansion@5": "^5.0.9",
+      "vite@6": "^6.4.3",
+      "multer": "^2.2.0",
+      "js-yaml@4": "^4.3.1",
+      "postcss": "^8.5.26",
+      "nanoid@3": "^3.3.18",
+      "body-parser@2": "^2.3.0",
+      "@babel/core@7": "^7.29.7"
+    }
+  }
+}

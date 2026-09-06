@@ -1,0 +1,65 @@
+# Reglas propias, además de las que gitleaks trae por defecto.
+#
+# Las credenciales que este proyecto maneja no coinciden con ningún patrón
+# genérico: el token de Meta parece una cadena cualquiera, y el de Cloudflare
+# también. Sin estas reglas, filtrarlas no dispararía nada.
+
+title = "CryoTech"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "meta-whatsapp-token"
+description = "Token de la Graph API de Meta (WhatsApp Business)"
+regex = '''EAA[A-Za-z0-9]{40,}'''
+tags = ["meta", "whatsapp"]
+
+[[rules]]
+id = "telegram-bot-token"
+description = "Token de bot de Telegram (@BotFather)"
+# `<id numérico>:<35 caracteres>`. El id del bot ha ido creciendo con los años,
+# de ocho a diez dígitos, así que el rango va abierto por arriba.
+regex = '''[0-9]{8,12}:AA[A-Za-z0-9_-]{32,34}'''
+tags = ["telegram"]
+
+[[rules]]
+id = "cloudflare-api-token"
+description = "Token de API de Cloudflare asignado a una variable"
+regex = '''(?i)cloudflare_api_token\s*[:=]\s*['"]?[A-Za-z0-9_-]{30,}'''
+tags = ["cloudflare"]
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Clave de la API de Anthropic"
+regex = '''sk-ant-[A-Za-z0-9_-]{20,}'''
+tags = ["anthropic"]
+
+[[rules]]
+id = "jwt-secret-assignment"
+description = "Secreto JWT con valor literal en el repositorio"
+regex = '''(?i)jwt_(access|refresh)_secret\s*[:=]\s*['"]?[^\s'"$}{]{16,}'''
+tags = ["jwt"]
+
+[[rules]]
+id = "hardcoded-login-password"
+description = "Contraseña literal en un cuerpo de login o registro"
+regex = '''(?i)"password"\s*:\s*"[^"]{6,}"'''
+tags = ["credentials"]
+
+[allowlist]
+description = "Ejemplos y placeholders que no son secretos"
+paths = [
+  '''\.env\.example$''',
+  '''pnpm-lock\.yaml$''',
+  # Página del BCV capturada tal cual para probar el scraper. Los tokens que
+  # lleva dentro son de Drupal y son suyos, no nuestros.
+  '''apps/api/test/fixtures/bcv-home\.html$''',
+]
+regexes = [
+  # Los .env.example y la documentación llevan estos a propósito.
+  '''change-me''',
+  '''your-.*-secret''',
+  '''secret-at-least''',
+  '''\$\{[A-Z_]+''',
+]

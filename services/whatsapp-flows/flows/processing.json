@@ -1,0 +1,145 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "PROCESSING",
+      "title": "Registrar beneficio",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "batches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "b1",
+              "title": "LOT-2600003",
+              "description": "420 aves listas"
+            }
+          ]
+        },
+        "min_date": {
+          "type": "string",
+          "__example__": "2026-05-10"
+        },
+        "max_date": {
+          "type": "string",
+          "__example__": "2026-08-08"
+        },
+        "rate_hint": {
+          "type": "string",
+          "__example__": "BCV de hoy: 757,54 Bs por dólar"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "processing_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "batch",
+                "label": "Lote",
+                "required": true,
+                "data-source": "${data.batches}"
+              },
+              {
+                "type": "TextInput",
+                "name": "quantity",
+                "label": "Aves beneficiadas",
+                "input-type": "number",
+                "required": true
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "who",
+                "label": "¿Quién benefició?",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "third_party",
+                    "title": "Alguien más (hay que pagarle)"
+                  },
+                  {
+                    "id": "self",
+                    "title": "Nosotros mismos"
+                  }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "supplier_name",
+                "label": "¿A quién se le paga?",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "total_cost_bs",
+                "label": "Costo total (Bs)",
+                "input-type": "number",
+                "helper-text": "${data.rate_hint}",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "live_weight_kg",
+                "label": "Peso vivo (kg)",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "processed_weight_kg",
+                "label": "Peso procesado (kg)",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "CalendarPicker",
+                "name": "processing_date",
+                "label": "Fecha del beneficio",
+                "mode": "single",
+                "required": true,
+                "min-date": "${data.min_date}",
+                "max-date": "${data.max_date}"
+              },
+              {
+                "type": "Footer",
+                "label": "Registrar beneficio",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "batch": "${form.batch}",
+                    "quantity": "${form.quantity}",
+                    "who": "${form.who}",
+                    "supplier_name": "${form.supplier_name}",
+                    "total_cost_bs": "${form.total_cost_bs}",
+                    "live_weight_kg": "${form.live_weight_kg}",
+                    "processed_weight_kg": "${form.processed_weight_kg}",
+                    "processing_date": "${form.processing_date}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

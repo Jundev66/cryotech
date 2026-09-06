@@ -1,0 +1,178 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "SALE",
+      "title": "Registrar venta",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "clients": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "c1",
+              "title": "Juan Mata",
+              "description": "Debe $120,00"
+            }
+          ]
+        },
+        "batches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "b1",
+              "title": "LOT-2600003",
+              "description": "420 aves · Galpón 1"
+            }
+          ]
+        },
+        "min_date": {
+          "type": "string",
+          "__example__": "2026-05-10"
+        },
+        "max_date": {
+          "type": "string",
+          "__example__": "2026-08-08"
+        },
+        "price_hint": {
+          "type": "string",
+          "__example__": "Precio habitual: $4,00 por kg"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "sale_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "client",
+                "label": "Cliente",
+                "required": true,
+                "data-source": "${data.clients}"
+              },
+              {
+                "type": "Dropdown",
+                "name": "batch",
+                "label": "Lote",
+                "required": true,
+                "data-source": "${data.batches}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "sale_type",
+                "label": "Tipo",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "live",
+                    "title": "Pollo vivo"
+                  },
+                  {
+                    "id": "dead",
+                    "title": "Beneficiado"
+                  }
+                ]
+              },
+              {
+                "type": "TextInput",
+                "name": "quantity",
+                "label": "Cantidad de aves",
+                "input-type": "number",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "weight_kg",
+                "label": "Kilos totales",
+                "input-type": "number",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "price_per_kg",
+                "label": "Precio por kg ($)",
+                "input-type": "number",
+                "helper-text": "${data.price_hint}",
+                "required": true
+              },
+              {
+                "type": "CalendarPicker",
+                "name": "sale_date",
+                "label": "Fecha de la venta",
+                "mode": "single",
+                "required": true,
+                "min-date": "${data.min_date}",
+                "max-date": "${data.max_date}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "payment",
+                "label": "¿Cómo quedó?",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "paid",
+                    "title": "Pagada"
+                  },
+                  {
+                    "id": "pending",
+                    "title": "Fiada"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Registrar venta",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "client": "${form.client}",
+                    "batch": "${form.batch}",
+                    "sale_type": "${form.sale_type}",
+                    "quantity": "${form.quantity}",
+                    "weight_kg": "${form.weight_kg}",
+                    "price_per_kg": "${form.price_per_kg}",
+                    "sale_date": "${form.sale_date}",
+                    "payment": "${form.payment}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

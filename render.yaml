@@ -1,0 +1,140 @@
+# Render Blueprint — la forma desplegada de la API, en el repo y no en un panel
+# que nadie puede diferenciar entre dos versiones.
+#
+# Este archivo no lleva ni una credencial. `sync: false` declara que la variable
+# existe pero le dice a Render que conserve el valor que ya tenga y que no lo
+# lea de aquí, así que los secretos se cargan una vez por API o por el panel y
+# nunca pasan por git. `generateValue: true` va un paso más allá: Render inventa
+# el valor al crear el servicio y nadie llega a verlo ni a copiarlo.
+
+services:
+  - type: web
+    name: cryotech-api
+    runtime: docker
+    plan: free
+    # Misma región de AWS que la base en Neon (us-east-2). Una consulta cruza un
+    # datacenter en lugar del continente, y con la base durmiéndose y
+    # despertándose sola eso se nota en cada primer mensaje.
+    region: ohio
+
+    dockerfilePath: ./apps/api/Dockerfile
+    # El Dockerfile copia de packages/ además de apps/api, así que el contexto
+    # de construcción tiene que ser la raíz del monorepo.
+    dockerContext: .
+
+    # Ruta con el prefijo global de la API (`setGlobalPrefix('api')` en main.ts).
+    # No toca la base a propósito: ver health.controller.ts.
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Explícito y coincidiendo con el EXPOSE del Dockerfile, en vez de
+      # depender de que Render adivine el puerto.
+      - key: PORT
+        value: 3001
+
+      # Generados por Render: nunca existen fuera de este servicio, así que no
+      # hay nada que filtrar por chat ni que rotar a mano. El validador exige
+      # 32+ caracteres y que sean distintos entre sí; dos valores generados
+      # independientemente cumplen las dos cosas.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      # Sin web desplegada todavía, CORS no protege nada — pero el validador
+      # exige una URL completa, así que tiene que ser una de verdad. Cambia en
+      # la Fase 2, cuando la web viva en el dominio.
+      - key: CORS_ORIGIN
+        value: http://localhost:3002
+
+      # Explícito aunque NODE_ENV=production ya lo cerraría: esta es la única
+      # ruta que crea usuarios y empresas sin credenciales previas, y aquí la
+      # API está en internet abierto. Que el estado se lea en el blueprint, y
+      # no dependa de recordar cómo se comporta un default.
+      - key: REGISTRATION_ENABLED
+        value: "false"
+
+      # --- Cola de entrada ---
+      # `sync: false` y no un valor: la URL del Worker lleva el subdominio de la
+      # cuenta de Cloudflare, que es un identificador personal. Se pone una vez
+      # en el panel de Render y el blueprint no la vuelve a tocar.
+      - key: BUFFER_URL
+        sync: false
+      - key: BUFFER_POLL_SECONDS
+        value: 5
+      - key: BUFFER_PULL_TOKEN
+        sync: false
+
+      # --- Base de datos (Neon) ---
+      - key: DATABASE_URL
+        sync: false
+
+      # --- Meta / WhatsApp ---
+      - key: META_GRAPH_VERSION
+        value: v21.0
+      - key: META_WHATSAPP_TOKEN
+        sync: false
+      - key: META_WHATSAPP_PHONE_ID
+        sync: false
+
+      # --- Telegram ---
+      # Sin buffer delante: Telegram entrega directo en /api/telegram/webhook y
+      # se autentica con TELEGRAM_WEBHOOK_SECRET, no con una firma sobre el
+      # cuerpo. Si el secreto falta, el endpoint responde 403 a todo.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+
+      # --- Asistente ---
+      - key: ASSISTANT_TIMEZONE
+        value: America/Caracas
+      - key: ASSISTANT_DRAFT_TTL_MINUTES
+        value: 60
+      - key: ASSISTANT_FLOW_TTL_MINUTES
+        value: 60
+      # Los booleanos van entrecomillados en todo este archivo. Sin comillas,
+      # YAML los convierte en booleanos de verdad, y al pasarlos a texto salen
+      # como "False" y "True" con mayúscula. El código compara contra 'true' y
+      # 'false' en minúscula, así que una bandera puesta a "False" no significa
+      # falso: significa "distinto de todo", y acierta o falla según hacia qué
+      # lado caiga el `===`. REGISTRATION_ENABLED, que sí se valida como enum,
+      # directamente impedía arrancar la API.
+      - key: ASSISTANT_FAKE_AI
+        value: "false"
+      - key: ASSISTANT_COMPANY_ID
+        sync: false
+      - key: ASSISTANT_ALLOWED_PHONES
+        sync: false
+      - key: ASSISTANT_ALLOWED_TELEGRAM_IDS
+        sync: false
+
+      # --- Lectura de comprobantes ---
+      - key: OCR_LANG
+        value: spa
+      - key: OCR_FALLBACK_ENABLED
+        value: "true"
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-4-5
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # --- Tasa del BCV ---
+      # Apunta al proxy del Worker, no a bcv.org.ve: Node no puede verificar la
+      # cadena de certificado del BCV y BCV_ALLOW_INSECURE_TLS está prohibida
+      # bajo NODE_ENV=production. Por eso no aparece aquí: se queda en su
+      # valor por defecto, 'false'.
+      # El mismo Worker con /bcv al final; también desde el panel.
+      - key: BCV_URL
+        sync: false
+      - key: BCV_TIMEOUT_MS
+        value: 10000
+      - key: BCV_PROXY_TOKEN
+        sync: false
+
+      # --- Formularios nativos de WhatsApp ---
+      - key: WHATSAPP_FLOWS_ENABLED
+        value: "false"

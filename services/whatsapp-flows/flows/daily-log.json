@@ -1,0 +1,116 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "DAILY_LOG",
+      "title": "Registro diario",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "batches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "b1",
+              "title": "LOT-2600003",
+              "description": "420 aves · día 32"
+            }
+          ]
+        },
+        "min_date": {
+          "type": "string",
+          "__example__": "2026-05-10"
+        },
+        "max_date": {
+          "type": "string",
+          "__example__": "2026-08-08"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "daily_log_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "batch",
+                "label": "Lote",
+                "required": true,
+                "data-source": "${data.batches}"
+              },
+              {
+                "type": "CalendarPicker",
+                "name": "log_date",
+                "label": "Día",
+                "mode": "single",
+                "required": true,
+                "min-date": "${data.min_date}",
+                "max-date": "${data.max_date}"
+              },
+              {
+                "type": "TextInput",
+                "name": "mortality",
+                "label": "Aves muertas",
+                "input-type": "number",
+                "helper-text": "Escribe 0 si no murió ninguna",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "feed_consumed_kg",
+                "label": "Alimento consumido (kg)",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "average_weight_g",
+                "label": "Peso promedio (gramos)",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "water_consumed_l",
+                "label": "Agua consumida (litros)",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "Footer",
+                "label": "Guardar el día",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "batch": "${form.batch}",
+                    "log_date": "${form.log_date}",
+                    "mortality": "${form.mortality}",
+                    "feed_consumed_kg": "${form.feed_consumed_kg}",
+                    "average_weight_g": "${form.average_weight_g}",
+                    "water_consumed_l": "${form.water_consumed_l}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

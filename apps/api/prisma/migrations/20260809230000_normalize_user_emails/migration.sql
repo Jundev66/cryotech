@@ -1,0 +1,24 @@
+-- Normaliza los correos ya guardados.
+--
+-- El índice único de `users.email` es sobre texto, y en Postgres el texto
+-- distingue mayúsculas: `Alex@correo.com` y `alex@correo.com` conviven como dos
+-- cuentas distintas. Y quien se registraba con una mayúscula y luego escribía
+-- todo en minúsculas recibía "Credenciales inválidas" en su propia cuenta.
+--
+-- Desde ahora la normalización vive en el schema de Zod compartido
+-- (`packages/shared-types/src/schemas/auth.ts`), que cubre las tres puertas por
+-- donde entra un correo: registro, login e invitación a una empresa. Esto
+-- arregla lo que ya estaba escrito.
+--
+-- Si dos filas colapsaran en el mismo correo, el índice único aborta la
+-- migración, y así debe ser: fusionar dos cuentas —con sus empresas, sus
+-- sesiones y sus registros— no es algo que deba ocurrir dentro de un UPDATE
+-- silencioso; hay que decidir cuál se queda.
+--
+-- Deliberadamente NO se cambia el índice por uno funcional sobre `lower(email)`.
+-- Sería más fuerte, pero Prisma no sabe declararlo: la diferencia quedaría como
+-- drift, y contra esta base drift significa que un `migrate dev` distraído
+-- ofrezca resetear el esquema. El aislamiento de esta aplicación vive en la
+-- aplicación —igual que el de las empresas—, y esto es coherente con eso.
+
+UPDATE users SET email = lower(btrim(email)) WHERE email <> lower(btrim(email));

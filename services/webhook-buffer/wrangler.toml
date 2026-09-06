@@ -1,0 +1,38 @@
+name = "cryotech-webhook-buffer"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# La cola sigue moviéndose por Meta empujando y la API tirando, no por el
+# horario. Estos disparos hacen otras dos cosas:
+#
+#   0 4 * * *      limpieza de filas ya confirmadas
+#   0 13 * * 1-5   despertar la API antes de su refresco de tasa de las 9:05
+#   55 17 * * 1-5  ídem, antes del de las 14:00
+#
+# Los dos últimos existen porque el cron que trae la tasa del BCV vive dentro
+# del proceso de la API (@nestjs/schedule), y en el plan gratuito de Render la
+# instancia duerme a los quince minutos sin tráfico: a las 9:05 no hay proceso
+# que lo ejecute. El Worker sí está siempre despierto, así que la despierta unos
+# minutos antes y el cron de la API se dispara con ella viva. De lunes a viernes
+# porque el BCV no publica los fines de semana — el sábado la tasa buena es la
+# del viernes. Las horas van en UTC; Caracas es UTC-4.
+[triggers]
+crons = ["0 4 * * *", "0 13 * * 1-5", "55 17 * * 1-5"]
+
+[vars]
+# La API corre en una instancia gratuita de Render, que se duerme a los quince
+# minutos sin tráfico entrante. Su propio poller sale hacia afuera, así que
+# nunca puede despertarse sola: este Worker le pega un ping al recibir un
+# mensaje. No es un secreto — es una URL pública protegida por lo que hay
+# detrás — así que vive aquí y no en `wrangler secret`.
+API_WAKE_URL = "https://cryotech-api.onrender.com/api/health"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cryotech-webhook-buffer"
+database_id = "df4ce963-9303-4dd8-a2b8-de0c7bcb5a78"
+
+# Secrets are set with `wrangler secret put`, never committed:
+#   META_APP_SECRET             (from the Meta app: Settings > Basic > App Secret)
+#   META_WHATSAPP_VERIFY_TOKEN  (any string; the same one entered in Meta)
+#   PULL_TOKEN                  (any long random string; shared with the API)

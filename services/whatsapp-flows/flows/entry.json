@@ -1,0 +1,164 @@
+{
+  "version": "7.3",
+  "screens": [
+    {
+      "id": "ENTRY",
+      "title": "Registrar compra",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "p1",
+              "title": "Alimento Engorde",
+              "description": "Existencia: 12 sacos"
+            }
+          ]
+        },
+        "batches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          "__example__": [
+            {
+              "id": "none",
+              "title": "Sin lote",
+              "description": "Gasto general de la granja"
+            }
+          ]
+        },
+        "min_date": {
+          "type": "string",
+          "__example__": "2026-05-10"
+        },
+        "max_date": {
+          "type": "string",
+          "__example__": "2026-08-08"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "entry_form",
+            "children": [
+              {
+                "type": "Dropdown",
+                "name": "product",
+                "label": "Producto",
+                "required": true,
+                "data-source": "${data.products}"
+              },
+              {
+                "type": "TextInput",
+                "name": "quantity",
+                "label": "Cantidad",
+                "input-type": "number",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "total_cost",
+                "label": "Costo total (Bs)",
+                "input-type": "number",
+                "required": true
+              },
+              {
+                "type": "TextInput",
+                "name": "delivery_cost",
+                "label": "Flete (Bs)",
+                "input-type": "number",
+                "required": false
+              },
+              {
+                "type": "TextInput",
+                "name": "supplier_name",
+                "label": "Proveedor",
+                "input-type": "text",
+                "required": false
+              },
+              {
+                "type": "Dropdown",
+                "name": "batch",
+                "label": "¿Para qué lote?",
+                "required": true,
+                "data-source": "${data.batches}"
+              },
+              {
+                "type": "CalendarPicker",
+                "name": "entry_date",
+                "label": "Fecha de la compra",
+                "mode": "single",
+                "required": true,
+                "min-date": "${data.min_date}",
+                "max-date": "${data.max_date}"
+              },
+              {
+                "type": "RadioButtonsGroup",
+                "name": "received",
+                "label": "¿Ya llegó la mercancía?",
+                "required": true,
+                "data-source": [
+                  {
+                    "id": "yes",
+                    "title": "Sí, ya la recibí"
+                  },
+                  {
+                    "id": "no",
+                    "title": "Todavía no"
+                  }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Registrar compra",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {
+                    "product": "${form.product}",
+                    "quantity": "${form.quantity}",
+                    "total_cost": "${form.total_cost}",
+                    "delivery_cost": "${form.delivery_cost}",
+                    "supplier_name": "${form.supplier_name}",
+                    "batch": "${form.batch}",
+                    "entry_date": "${form.entry_date}",
+                    "received": "${form.received}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

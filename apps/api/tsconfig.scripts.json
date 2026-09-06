@@ -1,0 +1,10 @@
+{
+  "//": "Type-checks the verification scripts and tests too. Never emits: ts-node compiles them at run time.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*", "scripts/**/*", "prisma/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,137 @@
+# Every credential comes from the environment — Compose reads ./.env, which is
+# gitignored. Nothing here has a default: a missing value fails the stack at
+# start rather than silently booting on a secret that is published in this file.
+#
+# The previous version shipped a literal access secret in this file, so anyone
+# who read the repository could forge an access token for any user of any
+# deployment that used it.
+#
+# Setup: cp .env.example .env && chmod 600 .env, then fill it in.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?falta POSTGRES_USER en ./.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en ./.env}
+      POSTGRES_DB: ${POSTGRES_DB:?falta POSTGRES_DB en ./.env}
+    # Bound to loopback: the database has no business being reachable from the
+    # network just because the laptop joined a café wifi.
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    # Bare names (no `=`) take the value from ./.env and, when it is absent
+    # there, leave the variable *unset* in the container rather than setting it
+    # to the empty string. That distinction is not cosmetic: BUFFER_PULL_TOKEN
+    # is validated as `min(32).optional()`, and an empty string is neither
+    # absent nor 32 characters, so `${VAR:-}` would fail the boot outright.
+    # It also keeps `docker compose up postgres` working on a laptop whose
+    # ./.env carries none of the bot's configuration.
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:?falta JWT_ACCESS_SECRET en ./.env}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:?falta JWT_REFRESH_SECRET en ./.env}
+      - CORS_ORIGIN=${CORS_ORIGIN:?falta CORS_ORIGIN en ./.env}
+      - PORT=3001
+      - NODE_ENV=production
+
+      # Without these the poller starts, logs that it is idle, and the bot
+      # never answers a message — the container looks perfectly healthy while
+      # doing nothing. This block is the whole reason a server deployment works.
+      - BUFFER_URL
+      - BUFFER_PULL_TOKEN
+      - BUFFER_POLL_SECONDS
+
+      # Meta. META_APP_SECRET and META_WHATSAPP_VERIFY_TOKEN are deliberately
+      # absent: only the Cloudflare Worker verifies signatures, so those two
+      # secrets never need to exist on this host.
+      - META_WHATSAPP_TOKEN
+      - META_WHATSAPP_PHONE_ID
+      - META_GRAPH_VERSION
+
+      # Telegram delivers straight to /api/telegram/webhook, so unlike the
+      # WhatsApp side this host does hold the secret that authenticates it.
+      # An unset TELEGRAM_WEBHOOK_SECRET makes that route answer 403 to
+      # everything, which is how you run WhatsApp-only.
+      - TELEGRAM_BOT_TOKEN
+      - TELEGRAM_WEBHOOK_SECRET
+
+      - ASSISTANT_COMPANY_ID
+      - ASSISTANT_ALLOWED_PHONES
+      - ASSISTANT_ALLOWED_TELEGRAM_IDS
+      - ASSISTANT_TIMEZONE
+      - ASSISTANT_DRAFT_TTL_MINUTES
+      - ASSISTANT_FLOW_TTL_MINUTES
+      - ASSISTANT_FAKE_AI
+
+      - ANTHROPIC_API_KEY
+      - ANTHROPIC_MODEL
+      - ANTHROPIC_MAX_TOKENS
+      - OCR_LANG
+      - OCR_MIN_CONFIDENCE
+      - OCR_FALLBACK_ENABLED
+
+      # BCV_URL points at the Worker's /bcv proxy here, not at bcv.org.ve:
+      # Node cannot verify the BCV's certificate chain, and the flag that
+      # papers over it is refused under NODE_ENV=production. BCV_ALLOW_INSECURE_TLS
+      # is not passed at all so it keeps its 'false' default.
+      - BCV_URL
+      - BCV_PROXY_TOKEN
+      - BCV_TIMEOUT_MS
+      - EXCHANGE_RATE_FALLBACK
+
+      - WHATSAPP_FLOWS_ENABLED
+      - WHATSAPP_FLOW_IDS
+      - WHATSAPP_FLOWS_DRAFT
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Behind a profile (`--profile web`) because the WhatsApp bot is a complete
+  # deployment on its own: it needs no inbound traffic, so a server that only
+  # runs the bot should not spend build time and disk on a frontend nobody can
+  # reach. Bringing it up is what the Cloudflare Tunnel phase adds.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    profiles:
+      - web
+    depends_on:
+      - api
+
+  # Dev only (`--profile dev`). Credentials are required rather than defaulted:
+  # this container speaks to the database with full privileges, and it used to
+  # ship with admin@cryotech.com / admin on an open port.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:?falta PGADMIN_EMAIL en ./.env}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?falta PGADMIN_PASSWORD en ./.env}
+    ports:
+      - "127.0.0.1:5050:80"
+    profiles:
+      - dev
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:

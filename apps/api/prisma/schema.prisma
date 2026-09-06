@@ -1,0 +1,966 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  fullName     String?  @map("full_name")
+  phone        String?
+  avatarUrl    String?  @map("avatar_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  ownedCompanies   Company[]         @relation("CompanyOwner")
+  memberships      CompanyMember[]
+  refreshTokens    RefreshToken[]
+  whatsappSessions WhatsappSession[]
+
+  @@map("users")
+}
+
+/// Refresh tokens are stored hashed, like passwords.
+///
+/// The plaintext used to live here, which meant a database dump — a backup, a
+/// pgAdmin session, a restored snapshot — handed over live sessions for every
+/// user. The token itself is high-entropy, so a single SHA-256 is enough:
+/// there is no dictionary to run against 256 random bits, and bcrypt on the
+/// refresh path would cost real latency for nothing.
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  /// SHA-256 of the token we handed out, hex. Never the token itself.
+  tokenHash String   @unique @map("token_hash")
+  /// Every token minted from the same login shares this. Rotation keeps it, so
+  /// replaying a token that was already rotated identifies the whole lineage
+  /// and lets us revoke it in one shot.
+  familyId  String   @map("family_id") @db.Uuid
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model Company {
+  id        String   @id @default(uuid()) @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String
+  legalName String?  @map("legal_name")
+  taxId     String?  @map("tax_id")
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner               User                    @relation("CompanyOwner", fields: [ownerId], references: [id])
+  members             CompanyMember[]
+  roles               Role[]
+  warehouses          Warehouse[]
+  batches             Batch[]
+  dailyLogs           DailyLog[]
+  clients             Client[]
+  products            Product[]
+  transactions        Transaction[]
+  sales               Sale[]
+  feedFormulas        FeedFormula[]
+  feedConsumptions    FeedConsumption[]
+  productEntries      ProductEntry[]
+  processings         Processing[]
+  productConsumptions ProductConsumption[]
+  feedPhaseConfigs    FeedPhaseConfig[]
+  exchangeRateConfig  ExchangeRateConfig?
+  whatsappSessions    WhatsappSession[]
+  measurementUnits    MeasurementUnit[]
+  productCategories   ProductCategoryConfig[]
+  salePayments        SalePayment[]
+  sequenceCounters    SequenceCounter[]
+  accounts            Account[]
+  accountMovements    AccountMovement[]
+  fxTrades            FxTrade[]
+  botDrafts           BotDraft[]
+  botFlowSessions     BotFlowSession[]
+  accountIdentifiers  AccountIdentifier[]
+  payablePayments     PayablePayment[]
+
+  @@map("companies")
+}
+
+model SequenceCounter {
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+  entity    String
+  lastValue Int    @default(0) @map("last_value")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, entity])
+  @@map("sequence_counters")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  name        String
+  permissions Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  members CompanyMember[]
+
+  @@unique([companyId, name])
+  @@map("roles")
+}
+
+model CompanyMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String?  @map("role_id") @db.Uuid
+  isOwner   Boolean  @default(false) @map("is_owner")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    Role?   @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, userId])
+  @@index([userId])
+  @@index([companyId])
+  @@map("company_members")
+}
+
+model Warehouse {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  code      String?
+  name      String
+  capacity  Int?
+  location  String?
+  isMain    Boolean  @default(false) @map("is_main")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batches Batch[]
+
+  @@index([companyId])
+  @@map("warehouses")
+}
+
+enum BatchStatus {
+  planned
+  breeding
+  for_sale
+  finished
+}
+
+model Batch {
+  id                   String      @id @default(uuid()) @db.Uuid
+  companyId            String      @map("company_id") @db.Uuid
+  code                 String?
+  warehouseId          String      @map("warehouse_id") @db.Uuid
+  breed                String
+  startDate            DateTime    @default(now()) @map("start_date") @db.Date
+  endDate              DateTime?   @map("end_date") @db.Date
+  initialQuantity      Int         @map("initial_quantity")
+  currentQuantity      Int         @map("current_quantity")
+  purchasePricePerUnit Decimal?    @map("purchase_price_per_unit") @db.Decimal(10, 2)
+  status               BatchStatus @default(planned)
+  notes                String?
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+
+  company             Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse           Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  dailyLogs           DailyLog[]
+  sales               Sale[]
+  transactions        Transaction[]
+  feedConsumptions    FeedConsumption[]
+  entryLines          BatchEntryLine[]
+  productEntries      ProductEntry[]
+  processings         Processing[]
+  productConsumptions ProductConsumption[]
+
+  @@index([companyId])
+  @@index([warehouseId])
+  @@index([status])
+  @@map("batches")
+}
+
+model DailyLog {
+  id                   String   @id @default(uuid()) @db.Uuid
+  batchId              String   @map("batch_id") @db.Uuid
+  companyId            String   @map("company_id") @db.Uuid
+  logDate              DateTime @default(now()) @map("log_date") @db.Date
+  waterConsumedL       Decimal? @map("water_consumed_l") @db.Decimal(10, 3)
+  mortality            Int      @default(0)
+  averageWeightG       Decimal? @map("average_weight_g") @db.Decimal(10, 2)
+  temperatureC         Decimal? @map("temperature_c") @db.Decimal(5, 2)
+  humidityPct          Decimal? @map("humidity_pct") @db.Decimal(5, 2)
+  medicineAdministered Boolean  @default(false) @map("medicine_administered")
+  medicineNotes        String?  @map("medicine_notes")
+  medicineProductId    String?  @map("medicine_product_id") @db.Uuid
+  medicineQuantity     Decimal? @map("medicine_quantity") @db.Decimal(10, 3)
+  feedConsumedKg       Decimal? @map("feed_consumed_kg") @db.Decimal(10, 3)
+  feedProductId        String?  @map("feed_product_id") @db.Uuid
+  healthScore          Int?     @map("health_score")
+  notes                String?
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  batch           Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  medicineProduct Product? @relation("MedicineLogs", fields: [medicineProductId], references: [id], onDelete: SetNull)
+  feedProduct     Product? @relation("FeedLogs", fields: [feedProductId], references: [id], onDelete: SetNull)
+
+  @@unique([batchId, logDate])
+  @@index([batchId])
+  @@index([logDate])
+  @@map("daily_logs")
+}
+
+model Client {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  code      String?
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sales   Sale[]
+
+  @@index([companyId])
+  @@map("clients")
+}
+
+enum ProductType {
+  consumable
+  equipment
+}
+
+model MeasurementUnit {
+  id           String   @id @default(uuid()) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  name         String
+  abbreviation String
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([companyId, abbreviation])
+  @@index([companyId])
+  @@map("measurement_units")
+}
+
+model ProductCategoryConfig {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  name      String
+  slug      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([companyId, slug])
+  @@index([companyId])
+  @@map("product_categories")
+}
+
+model Product {
+  id           String      @id @default(uuid()) @db.Uuid
+  companyId    String      @map("company_id") @db.Uuid
+  code         String?
+  name         String
+  categoryId   String      @map("category_id") @db.Uuid
+  productType  ProductType @default(consumable) @map("product_type")
+  unitId       String      @map("unit_id") @db.Uuid
+  currentStock Decimal     @default(0) @map("current_stock") @db.Decimal(12, 3)
+  minStock     Decimal     @default(0) @map("min_stock") @db.Decimal(12, 3)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  company             Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category            ProductCategoryConfig @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  measurementUnit     MeasurementUnit       @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  feedConsumptions    FeedConsumption[]
+  entries             ProductEntry[]
+  batchEntryLines     BatchEntryLine[]
+  processings         Processing[]          @relation("ProcessedProduct")
+  productConsumptions ProductConsumption[]
+  medicineLogs        DailyLog[]            @relation("MedicineLogs")
+  feedLogs            DailyLog[]            @relation("FeedLogs")
+
+  @@index([companyId])
+  @@index([categoryId])
+  @@index([unitId])
+  @@map("products")
+}
+
+enum TransactionType {
+  income
+  expense
+}
+
+enum TransactionCategory {
+  feed
+  vaccine
+  /// Day-old chicks. Roughly half of what a batch costs to raise, and until it
+  /// had a category of its own the whole line hid inside `other` — the second
+  /// biggest expense on the books, invisible in every report.
+  chicks
+  sale_live
+  sale_dead
+  processing
+  utility
+  labor
+  transport
+  other
+  capital_in
+  owner_draw
+}
+
+model Transaction {
+  id              String              @id @default(uuid()) @db.Uuid
+  batchId         String?             @map("batch_id") @db.Uuid
+  companyId       String              @map("company_id") @db.Uuid
+  code            String?
+  type            TransactionType
+  category        TransactionCategory
+  amount          Decimal             @db.Decimal(12, 2)
+  amountBs        Decimal?            @map("amount_bs") @db.Decimal(12, 2)
+  exchangeRate    Decimal?            @map("exchange_rate") @db.Decimal(12, 4)
+  description     String?
+  sourceType      String?             @map("source_type")
+  sourceId        String?             @map("source_id") @db.Uuid
+  accountId       String?             @map("account_id") @db.Uuid
+  transactionDate DateTime            @default(now()) @map("transaction_date") @db.Date
+  createdAt       DateTime            @default(now()) @map("created_at")
+
+  batch   Batch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([batchId])
+  @@index([companyId])
+  @@index([transactionDate])
+  @@map("transactions")
+}
+
+enum SaleType {
+  live
+  dead
+}
+
+enum PaymentStatus {
+  pending
+  partial
+  paid
+}
+
+model Sale {
+  id            String        @id @default(uuid()) @db.Uuid
+  batchId       String        @map("batch_id") @db.Uuid
+  companyId     String        @map("company_id") @db.Uuid
+  code          String?
+  clientId      String?       @map("client_id") @db.Uuid
+  saleType      SaleType      @map("sale_type")
+  quantity      Int
+  weightKg      Decimal?      @map("weight_kg") @db.Decimal(10, 2)
+  pricePerKg    Decimal?      @map("price_per_kg") @db.Decimal(10, 2)
+  pricePerUnit  Decimal?      @map("price_per_unit") @db.Decimal(10, 2)
+  totalAmount   Decimal       @map("total_amount") @db.Decimal(12, 2)
+  pricePerKgBs  Decimal?      @map("price_per_kg_bs") @db.Decimal(10, 2)
+  totalAmountBs Decimal?      @map("total_amount_bs") @db.Decimal(12, 2)
+  exchangeRate  Decimal?      @map("exchange_rate") @db.Decimal(12, 4)
+  paymentStatus PaymentStatus @default(pending) @map("payment_status")
+  paidAmount    Decimal       @default(0) @map("paid_amount") @db.Decimal(12, 2)
+  dueDate       DateTime?     @map("due_date") @db.Date
+  saleDate      DateTime      @default(now()) @map("sale_date") @db.Date
+  notes         String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  batch    Batch         @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  company  Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client   Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  payments SalePayment[]
+
+  @@index([batchId])
+  @@index([companyId])
+  @@index([saleDate])
+  @@index([paymentStatus])
+  @@map("sales")
+}
+
+model SalePayment {
+  id           String   @id @default(uuid()) @db.Uuid
+  saleId       String   @map("sale_id") @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  amount       Decimal  @db.Decimal(12, 2)
+  amountBs     Decimal? @map("amount_bs") @db.Decimal(12, 2)
+  exchangeRate Decimal? @map("exchange_rate") @db.Decimal(12, 4)
+  accountId    String?  @map("account_id") @db.Uuid
+  paymentDate  DateTime @default(now()) @map("payment_date") @db.Date
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([saleId])
+  @@index([companyId])
+  @@map("sale_payments")
+}
+
+enum FeedPhase {
+  inicio
+  engorde
+}
+
+model FeedFormula {
+  id                String     @id @default(uuid()) @db.Uuid
+  companyId         String     @map("company_id") @db.Uuid
+  breed             String
+  weekNumber        Int        @map("week_number")
+  dailyFeedPerBirdG Decimal    @map("daily_feed_per_bird_g") @db.Decimal(8, 2)
+  feedPhase         FeedPhase? @map("feed_phase")
+  notes             String?
+  createdAt         DateTime   @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, breed, weekNumber, feedPhase])
+  @@map("feed_formulas")
+}
+
+enum ConsumptionStatus {
+  pending
+  confirmed
+  adjusted
+}
+
+model FeedConsumption {
+  id                 String            @id @default(uuid()) @db.Uuid
+  batchId            String            @map("batch_id") @db.Uuid
+  companyId          String            @map("company_id") @db.Uuid
+  productId          String?           @map("product_id") @db.Uuid
+  consumptionDate    DateTime          @default(now()) @map("consumption_date") @db.Date
+  quantityKg         Decimal           @map("quantity_kg") @db.Decimal(10, 3)
+  adjustedQuantityKg Decimal?          @map("adjusted_quantity_kg") @db.Decimal(10, 3)
+  isAutoCalculated   Boolean           @default(false) @map("is_auto_calculated")
+  isAutoGenerated    Boolean           @default(false) @map("is_auto_generated")
+  status             ConsumptionStatus @default(pending)
+  notes              String?
+  createdAt          DateTime          @default(now()) @map("created_at")
+
+  batch   Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@unique([batchId, consumptionDate])
+  @@index([batchId])
+  @@map("feed_consumptions")
+}
+
+enum EntryStatus {
+  pending
+  received
+}
+
+/// A purchase. Two independent lifecycles run on it:
+///
+///   status        — pending | received. Receiving is what recognises the
+///                   expense (a Transaction) and moves stock.
+///   paymentStatus — pending | partial | paid. Paying is what moves cash
+///                   (an AccountMovement).
+///
+/// They are deliberately decoupled: paying chicks in advance moves cash today
+/// and books the expense when they arrive; buying feed on credit does the
+/// reverse. Neither could be expressed while a purchase had no payment state.
+model ProductEntry {
+  id            String        @id @default(uuid()) @db.Uuid
+  companyId     String        @map("company_id") @db.Uuid
+  code          String?
+  productId     String        @map("product_id") @db.Uuid
+  batchId       String?       @map("batch_id") @db.Uuid
+  quantity      Decimal       @db.Decimal(12, 3)
+  costPerUnit   Decimal?      @map("cost_per_unit") @db.Decimal(10, 2)
+  totalCost     Decimal?      @map("total_cost") @db.Decimal(12, 2)
+  deliveryCost  Decimal?      @map("delivery_cost") @db.Decimal(12, 2)
+  status        EntryStatus   @default(pending)
+  /// Who we bought from. Taken from the receipt's counterparty name; there is
+  /// no supplier model yet and this is enough to answer "who did I pay".
+  supplierName  String?       @map("supplier_name")
+  paymentStatus PaymentStatus @default(pending) @map("payment_status")
+  /// Always in bolivares, matching transactions.amount.
+  paidAmount    Decimal       @default(0) @map("paid_amount") @db.Decimal(12, 2)
+  entryDate     DateTime      @default(now()) @map("entry_date") @db.Date
+  notes         String?
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  company  Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product  Product          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batch    Batch?           @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  payments PayablePayment[]
+
+  @@index([companyId])
+  @@index([productId])
+  @@index([batchId])
+  @@index([status])
+  @@index([companyId, paymentStatus])
+  @@map("product_entries")
+}
+
+/// Money paid against something we owe: a purchase or a processing job.
+///
+/// One table instead of one per operation. The link is a nullable typed foreign
+/// key per payable kind rather than a polymorphic `sourceId`, so referential
+/// integrity survives and a new payable kind (a haulier, a vet) costs a column
+/// instead of a table. Exactly one of the FKs is set; the service enforces it.
+///
+/// Paying never recognises an expense — the operation already did that when it
+/// happened. This only moves cash.
+model PayablePayment {
+  id           String   @id @default(uuid()) @db.Uuid
+  companyId    String   @map("company_id") @db.Uuid
+  entryId      String?  @map("entry_id") @db.Uuid
+  processingId String?  @map("processing_id") @db.Uuid
+  /// In bolivares — the currency payables are denominated in.
+  amount       Decimal  @db.Decimal(12, 2)
+  amountUsd    Decimal? @map("amount_usd") @db.Decimal(12, 2)
+  exchangeRate Decimal? @map("exchange_rate") @db.Decimal(12, 4)
+  accountId    String?  @map("account_id") @db.Uuid
+  /// Bank reference from the receipt, for tracing back to the movement.
+  reference    String?
+  paymentDate  DateTime @default(now()) @map("payment_date") @db.Date
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  entry      ProductEntry? @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  processing Processing?   @relation(fields: [processingId], references: [id], onDelete: Cascade)
+  account    Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([entryId])
+  @@index([processingId])
+  @@index([companyId])
+  @@map("payable_payments")
+}
+
+model BatchEntryLine {
+  id           String   @id @default(uuid()) @db.Uuid
+  batchId      String   @map("batch_id") @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
+  quantity     Decimal  @db.Decimal(12, 3)
+  costPerUnit  Decimal? @map("cost_per_unit") @db.Decimal(10, 2)
+  deliveryCost Decimal? @map("delivery_cost") @db.Decimal(12, 2)
+  notes        String?
+  processed    Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  batch   Batch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([batchId])
+  @@map("batch_entry_lines")
+}
+
+/// Slaughtering a batch of birds, usually paid to a third party.
+///
+/// Like a purchase, it has two independent lifecycles: creating it recognises
+/// the expense and moves birds from the batch into processed stock; paying it
+/// moves cash. Booking the payment as a second expense — which is what happened
+/// with BEN-2600005 — double-counts the cost.
+///
+/// ⚠️ Currency trap: `totalCost` and `costPerBird` are in USD, `totalCostBs` is
+/// in bolivares. The payable balance is the bolivar figure.
+model Processing {
+  id                String        @id @default(uuid()) @db.Uuid
+  companyId         String        @map("company_id") @db.Uuid
+  code              String?
+  batchId           String        @map("batch_id") @db.Uuid
+  quantity          Int
+  liveWeightKg      Decimal?      @map("live_weight_kg") @db.Decimal(10, 2)
+  processedWeightKg Decimal?      @map("processed_weight_kg") @db.Decimal(10, 2)
+  weightAdjustmentG Decimal       @default(0) @map("weight_adjustment_g") @db.Decimal(8, 2)
+  isSelfProcessed   Boolean       @default(false) @map("is_self_processed")
+  costPerBird       Decimal?      @map("cost_per_bird") @db.Decimal(10, 2)
+  costPerKg         Decimal?      @map("cost_per_kg") @db.Decimal(10, 2)
+  /// In USD.
+  totalCost         Decimal       @map("total_cost") @db.Decimal(12, 2)
+  /// In bolivares. This is what a payment settles.
+  totalCostBs       Decimal?      @map("total_cost_bs") @db.Decimal(12, 2)
+  exchangeRate      Decimal?      @map("exchange_rate") @db.Decimal(12, 4)
+  /// Who did the slaughtering. Taken from the receipt's counterparty.
+  supplierName      String?       @map("supplier_name")
+  paymentStatus     PaymentStatus @default(pending) @map("payment_status")
+  /// In bolivares, matching totalCostBs.
+  paidAmount        Decimal       @default(0) @map("paid_amount") @db.Decimal(12, 2)
+  productId         String?       @map("product_id") @db.Uuid
+  processingDate    DateTime      @default(now()) @map("processing_date") @db.Date
+  notes             String?
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  company  Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batch    Batch            @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  product  Product?         @relation("ProcessedProduct", fields: [productId], references: [id], onDelete: SetNull)
+  payments PayablePayment[]
+
+  @@index([companyId])
+  @@index([batchId])
+  @@map("processings")
+}
+
+model ProductConsumption {
+  id              String   @id @default(uuid()) @db.Uuid
+  companyId       String   @map("company_id") @db.Uuid
+  batchId         String   @map("batch_id") @db.Uuid
+  productId       String   @map("product_id") @db.Uuid
+  consumptionDate DateTime @default(now()) @map("consumption_date") @db.Date
+  quantity        Decimal  @db.Decimal(12, 3)
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batch   Batch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@index([batchId])
+  @@index([productId])
+  @@map("product_consumptions")
+}
+
+model FeedPhaseConfig {
+  id               String   @id @default(uuid()) @db.Uuid
+  companyId        String   @map("company_id") @db.Uuid
+  breed            String
+  engordeStartWeek Int      @default(4) @map("engorde_start_week")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, breed])
+  @@map("feed_phase_configs")
+}
+
+// --- Phase D: Exchange Rate System ---
+
+enum RateSource {
+  bcv
+  parallel
+  custom
+}
+
+model ExchangeRateConfig {
+  id         String     @id @default(uuid()) @db.Uuid
+  companyId  String     @unique @map("company_id") @db.Uuid
+  rateSource RateSource @default(bcv) @map("rate_source")
+  customRate Decimal?   @map("custom_rate") @db.Decimal(12, 4)
+  autoFetch  Boolean    @default(true) @map("auto_fetch")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("exchange_rate_configs")
+}
+
+model ExchangeRate {
+  id           String    @id @default(uuid()) @db.Uuid
+  rateDate     DateTime  @map("rate_date") @db.Date
+  bcvRate      Decimal   @map("bcv_rate") @db.Decimal(12, 4)
+  parallelRate Decimal?  @map("parallel_rate") @db.Decimal(12, 4)
+  fetchedAt    DateTime? @map("fetched_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@unique([rateDate])
+  @@map("exchange_rates")
+}
+
+// --- Phase C: WhatsApp Bot ---
+
+model WhatsappSession {
+  id                String    @id @default(uuid()) @db.Uuid
+  phoneNumber       String    @unique @map("phone_number")
+  userId            String?   @map("user_id") @db.Uuid
+  companyId         String?   @map("company_id") @db.Uuid
+  verificationCode  String?   @map("verification_code")
+  codeExpiresAt     DateTime? @map("code_expires_at")
+  conversationState String    @default("idle") @map("conversation_state")
+  stateData         Json?     @map("state_data")
+  isLinked          Boolean   @default(false) @map("is_linked")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@map("whatsapp_sessions")
+}
+
+// --- Phase E: Treasury ---
+//
+// Separation of concerns:
+//   transactions      = P&L. What was earned and spent, attributed to a batch.
+//   account_movements = cash. Where the money physically is, per account.
+// A sale payment hits both. An FX trade or an internal transfer hits treasury
+// only — booking those as transactions would inflate expenses and wreck cost/kg.
+
+enum AccountKind {
+  bank
+  cash
+  digital
+}
+
+enum AccountCurrency {
+  VES
+  USD
+}
+
+enum MovementDirection {
+  in
+  out
+}
+
+model Account {
+  id             String          @id @default(uuid()) @db.Uuid
+  companyId      String          @map("company_id") @db.Uuid
+  code           String?
+  name           String
+  kind           AccountKind
+  currency       AccountCurrency
+  currentBalance Decimal         @default(0) @map("current_balance") @db.Decimal(14, 2)
+  isActive       Boolean         @default(true) @map("is_active")
+  notes          String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  identifiers     AccountIdentifier[]
+  movements       AccountMovement[]
+  transactions    Transaction[]
+  salePayments    SalePayment[]
+  payablePayments PayablePayment[]
+  fxTradesFrom    FxTrade[]           @relation("FxFromAccount")
+  fxTradesTo      FxTrade[]           @relation("FxToAccount")
+
+  @@index([companyId, isActive])
+  @@map("accounts")
+}
+
+/// How this account is recognised on an incoming receipt. A bank account is
+/// matched by its masked last 4 digits; a pago movil account by phone number.
+/// Phone values are normalised to their last 10 digits before storing.
+/// Cómo se reconoce una cuenta propia en un comprobante: los cuatro dígitos
+/// que muestra el banco, el teléfono de pago móvil, la cédula.
+model AccountIdentifier {
+  id        String                @id @default(uuid()) @db.Uuid
+  accountId String                @map("account_id") @db.Uuid
+  /// Duplicado del de la cuenta, y solo para poder acotarle el índice único:
+  /// Prisma no sabe expresar una restricción a través de una relación.
+  companyId String                @map("company_id") @db.Uuid
+  kind      AccountIdentifierKind
+  value     String
+  bankCode  String?               @map("bank_code")
+  createdAt DateTime              @default(now()) @map("created_at")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// Por empresa, no global. Siendo global, dos granjas no podían tener cuentas
+  /// terminadas en los mismos cuatro dígitos —cosa normalísima— y la segunda en
+  /// registrarse recibía un conflicto. La búsqueda ya filtra por empresa, así
+  /// que el alcance global no protegía de nada.
+  @@unique([companyId, kind, value, bankCode])
+  @@index([accountId])
+  @@map("account_identifiers")
+}
+
+enum AccountIdentifierKind {
+  last4
+  phone
+  document
+}
+
+model AccountMovement {
+  id              String            @id @default(uuid()) @db.Uuid
+  companyId       String            @map("company_id") @db.Uuid
+  accountId       String            @map("account_id") @db.Uuid
+  direction       MovementDirection
+  amount          Decimal           @db.Decimal(14, 2)
+  currency        AccountCurrency
+  movementDate    DateTime          @map("movement_date") @db.Date
+  /// Bank reference ("Operacion" on the receipt). Unique per company, so
+  /// forwarding the same screenshot twice can never register twice.
+  reference       String?
+  counterparty    String?
+  concept         String?
+  sourceType      String?           @map("source_type")
+  sourceId        String?           @map("source_id") @db.Uuid
+  /// Pairs the two legs of an internal transfer or an FX trade.
+  transferGroupId String?           @map("transfer_group_id") @db.Uuid
+  notes           String?
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, reference])
+  @@index([companyId, accountId, movementDate])
+  @@index([transferGroupId])
+  @@map("account_movements")
+}
+
+/// Buying or selling foreign currency. Produces two AccountMovements and no
+/// Transaction — it moves value between accounts, it is not income or expense.
+model FxTrade {
+  id            String   @id @default(uuid()) @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  code          String?
+  tradeDate     DateTime @map("trade_date") @db.Date
+  fromAccountId String   @map("from_account_id") @db.Uuid
+  toAccountId   String   @map("to_account_id") @db.Uuid
+  amountFrom    Decimal  @map("amount_from") @db.Decimal(14, 2)
+  amountTo      Decimal  @map("amount_to") @db.Decimal(14, 2)
+  rate          Decimal  @db.Decimal(12, 4)
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromAccount Account @relation("FxFromAccount", fields: [fromAccountId], references: [id], onDelete: Restrict)
+  toAccount   Account @relation("FxToAccount", fields: [toAccountId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, tradeDate])
+  @@map("fx_trades")
+}
+
+// --- Phase E: Assistant bot ---
+
+enum BotDraftStatus {
+  pending
+  confirmed
+  cancelled
+  expired
+  failed
+}
+
+/// A pending operation waiting for the user to confirm. Keeps the raw reader
+/// output alongside the resolved payload: when something goes wrong you need to
+/// see what was actually read, and that cannot be reconstructed afterwards.
+model BotDraft {
+  id             String         @id @default(uuid()) @db.Uuid
+  companyId      String         @map("company_id") @db.Uuid
+  userId         String?        @map("user_id") @db.Uuid
+  channel        String         @default("whatsapp")
+  externalUserId String         @map("external_user_id")
+  intent         String
+  status         BotDraftStatus @default(pending)
+  /// Which reader tier resolved this: ocr | ai_text | ai_image | manual
+  readerTier     String?        @map("reader_tier")
+  rawExtraction  Json?          @map("raw_extraction")
+  entities       Json
+  resolved       Json?
+  warnings       Json?
+  resultType     String?        @map("result_type")
+  resultId       String?        @map("result_id") @db.Uuid
+  errorMessage   String?        @map("error_message")
+  expiresAt      DateTime       @map("expires_at")
+  confirmedAt    DateTime?      @map("confirmed_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+  @@index([channel, externalUserId, status])
+  @@map("bot_drafts")
+}
+
+/// One operation being filled in, whichever way the user is filling it.
+///
+/// Two things share this table because they answer the same questions and end
+/// in the same records:
+///
+///   - a native WhatsApp form, which comes back all at once carrying the
+///     `flow_token` we chose and nothing else about who it was for;
+///   - the button wizard, which asks the same questions one message at a time
+///     and is what actually runs today — Meta will not release forms from an
+///     unregistered business.
+///
+/// Either way the answers land in `answers` and the options that were offered
+/// stay in `context`, so a submitted id can be checked against what was
+/// actually on screen.
+model BotFlowSession {
+  id             String    @id @default(uuid()) @db.Uuid
+  companyId      String    @map("company_id") @db.Uuid
+  channel        String    @default("whatsapp")
+  externalUserId String    @map("external_user_id")
+  /// Which operation: sale | processing | batch_plan | entry | daily_log
+  flowKind       String    @map("flow_kind")
+  /// Correlation id. Echoed back by a form; carried in button ids by the wizard.
+  flowToken      String    @unique @map("flow_token")
+  /// What the choices were populated with, so a submitted id can be trusted.
+  context        Json?
+  /// Which question the wizard is on. Unused by forms, which arrive complete.
+  step           Int       @default(0)
+  /// What has been answered so far, keyed by field.
+  answers        Json?
+  status         String    @default("pending")
+  /// What the submission produced, for tracing an entry back to its form.
+  resultType     String?   @map("result_type")
+  resultId       String?   @map("result_id") @db.Uuid
+  errorMessage   String?   @map("error_message")
+  expiresAt      DateTime  @map("expires_at")
+  consumedAt     DateTime? @map("consumed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([channel, externalUserId, status])
+  @@map("bot_flow_sessions")
+}
+
+enum BotInboundStatus {
+  received
+  processed
+  ignored
+  failed
+}
+
+/// Idempotency ledger for inbound channel events. The unique index on
+/// (channel, external_id) is what stops a redelivered message from registering
+/// a sale twice.
+model BotInboundMessage {
+  id             String           @id @default(uuid()) @db.Uuid
+  channel        String
+  externalId     String           @map("external_id")
+  externalUserId String           @map("external_user_id")
+  messageType    String           @map("message_type")
+  status         BotInboundStatus @default(received)
+  error          String?
+  receivedAt     DateTime         @default(now()) @map("received_at")
+  processedAt    DateTime?        @map("processed_at")
+
+  @@unique([channel, externalId])
+  @@index([externalUserId])
+  @@index([status, receivedAt])
+  @@map("bot_inbound_messages")
+}

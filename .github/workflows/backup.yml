@@ -1,0 +1,107 @@
+# Daily backup of the production database to Cloudflare R2.
+#
+# It lives here and not in the Worker for a concrete reason: a Worker cannot run
+# `pg_dump`, so backing up from there would mean reimplementing the dump by
+# hand. What matters in a backup is not making it, it is being able to restore
+# it the day it is needed, and for that `pg_dump` plus `pg_restore` beats
+# anything we would write ourselves.
+#
+# Neon runs PostgreSQL 18 and the 16 client refuses to dump from a newer server,
+# so the container version is not a detail: it has to follow Neon's when that
+# goes up.
+#
+# It uploads with wrangler rather than the S3 API on purpose: that reuses the
+# CLOUDFLARE_API_TOKEN the project already had for deploying the Worker instead
+# of demanding a separate set of S3 keys to create, store and rotate.
+#
+# Retention is NOT managed here. The bucket carries a lifecycle rule
+# ('retencion-14-dias') that expires objects after 14 days, so a failed run
+# neither stops the cleanup nor piles anything up.
+#
+# Required secrets (Settings → Secrets → Actions):
+#   DATABASE_URL            Neon connection string
+#   CLOUDFLARE_API_TOKEN    the same one that deploys the Worker
+#   CLOUDFLARE_ACCOUNT_ID
+
+name: Database backup
+
+on:
+  schedule:
+    # 07:00 UTC = 03:00 in Caracas. Nobody is operating the bot at that hour,
+    # so the dump competes with no one for the database.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Dump to R2
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BUCKET: cryotech-backups
+
+    steps:
+      # A clone without the secrets configured cannot back anything up, and a
+      # workflow failing every night over that leaves the repository permanently
+      # red for something that is not broken. Skip, and say why.
+      - name: Are the secrets there?
+        id: check
+        run: |
+          if [ -z "${{ secrets.DATABASE_URL }}" ] || [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No DATABASE_URL or CLOUDFLARE_API_TOKEN; nothing to back up."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dump the database
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          docker run --rm postgres:18-alpine pg_dump -Fc --no-owner --no-privileges \
+            "${{ secrets.DATABASE_URL }}" > backup.dump
+
+      - name: Check the dump is usable
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          # An empty or truncated file uploaded in silence is worse than having
+          # no backup: it looks like you are covered and you are not.
+          # `pg_restore -l` fails if the file is not a whole dump.
+          bytes=$(stat -c%s backup.dump)
+          echo "size: ${bytes} bytes"
+          if [ "$bytes" -lt 10240 ]; then
+            echo "::error::The dump weighs ${bytes} bytes — too little to be real"
+            exit 1
+          fi
+          # The file is mounted, not piped: pg_restore seeks inside the dump and
+          # cannot do that through a pipe, so `-l /dev/stdin` always fails with
+          # "did not find magic string in file header" even on a perfect dump. A
+          # validation step that always fails is worse than none.
+          docker run --rm -v "$PWD:/w" -w /w postgres:18-alpine pg_restore -l backup.dump > toc.txt
+          tables=$(grep -c 'TABLE DATA' toc.txt || true)
+          echo "tables with data: ${tables}"
+          if [ "$tables" -lt 10 ]; then
+            echo "::error::Only ${tables} tables with data; the schema has 35"
+            exit 1
+          fi
+
+      - name: Upload to R2
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          name="cryotech-$(date -u +%Y-%m-%d).dump"
+          npx --yes wrangler@4 r2 object put "${BUCKET}/${name}" \
+            --file=backup.dump --remote
+          echo "uploaded: ${name}"
+
+      # There used to be an `upload-artifact` here keeping a second copy of the
+      # dump, as a net in case the problem was R2 or its token. On a public
+      # repository anyone can download Actions artifacts, so that net published
+      # the whole database — sales, clients, treasury, users and their hashes —
+      # for the 14 days of retention. R2 is the real destination of the backup;
+      # the extra copy cost far more than it covered.

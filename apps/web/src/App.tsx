@@ -11,7 +11,6 @@ import { lazy, Suspense, useState } from 'react';
 // Login is eager: it is the first screen. The rest is lazy, so entering the app
 // no longer downloads Recharts and all twenty pages up front.
 import LoginPage from '@/pages/login';
-import RegisterPage from '@/pages/register';
 
 const OnboardingPage = lazy(() => import('@/pages/onboarding'));
 const DashboardPage = lazy(() => import('@/pages/dashboard'));
@@ -204,7 +203,7 @@ export function App() {
       />
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/register" element={<Navigate to="/login" replace />} />
       </Route>
       <Route path="/onboarding" element={<OnboardingRoute />} />
       <Route path="/dashboard" element={<DashboardLayout />}>

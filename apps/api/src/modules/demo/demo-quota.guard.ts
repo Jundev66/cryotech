@@ -27,7 +27,7 @@ export class DemoQuotaGuard implements CanActivate {
     // Verificar si la empresa actual es Demo
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
-      select: { isDemo: true, expiresAt: true },
+      select: { isDemo: true, expiresAt: true, createdAt: true },
     });
 
     if (!company || !company.isDemo) {
@@ -50,20 +50,18 @@ export class DemoQuotaGuard implements CanActivate {
       );
     }
 
-    // Contar las mutaciones realizadas por esta empresa demo
+    // Contar las mutaciones realizadas por el usuario demo tras el sembrado inicial (15s después de creación)
+    const seedThreshold = new Date(company.createdAt.getTime() + 15_000);
     const [salesCount, dailyLogsCount, batchesCount, entriesCount] = await Promise.all([
-      this.prisma.sale.count({ where: { companyId } }),
-      this.prisma.dailyLog.count({ where: { companyId } }),
-      this.prisma.batch.count({ where: { companyId } }),
-      this.prisma.productEntry.count({ where: { companyId } }),
+      this.prisma.sale.count({ where: { companyId, createdAt: { gt: seedThreshold } } }),
+      this.prisma.dailyLog.count({ where: { companyId, createdAt: { gt: seedThreshold } } }),
+      this.prisma.batch.count({ where: { companyId, createdAt: { gt: seedThreshold } } }),
+      this.prisma.productEntry.count({ where: { companyId, createdAt: { gt: seedThreshold } } }),
     ]);
 
-    // La semilla inicial tiene 2 ventas, 4 logs, 1 batch = 7 registros base.
-    // Permitimos hasta 10 mutaciones adicionales sobre la base.
-    const totalRecords = salesCount + dailyLogsCount + batchesCount + entriesCount;
-    const BASE_RECORDS = 7;
+    const userMutations = salesCount + dailyLogsCount + batchesCount + entriesCount;
 
-    if (totalRecords - BASE_RECORDS >= MAX_DEMO_MUTATIONS) {
+    if (userMutations >= MAX_DEMO_MUTATIONS) {
       throw new ForbiddenException(
         'Has alcanzado el límite de 10 operaciones de la demostración. Crea tu cuenta real para gestionar tu granja completa.',
       );

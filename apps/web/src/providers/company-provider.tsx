@@ -46,6 +46,9 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
       const savedId = localStorage.getItem('cryotech_company_id');
       const active = list.find(c => c.id === savedId) || list[0];
+      if (savedId !== active.id) {
+        queryClient.clear();
+      }
       setCompany(active);
       setIsOwner(active.isOwner ?? active.ownerId === user.id);
       localStorage.setItem('cryotech_company_id', active.id);
@@ -62,7 +65,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       } catch { /* permissions will be empty - owner has all access */ }
     } catch { /* no companies */ }
     setLoading(false);
-  }, [user]);
+  }, [user, queryClient]);
 
   useEffect(() => { loadCompanies(); }, [loadCompanies]);
 

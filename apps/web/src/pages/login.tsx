@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, type LoginInput } from '@cryotech/shared-types';
@@ -31,6 +31,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
+      // Clear previous demo or tenant residue
+      localStorage.removeItem('cryotech_company_id');
       const data = await authApi.login(values);
       localStorage.setItem('cryotech_access_token', data.accessToken);
       localStorage.setItem('cryotech_refresh_token', data.refreshToken);
@@ -49,6 +51,11 @@ export default function LoginPage() {
     setError('');
     setDemoLoading(true);
     try {
+      // Clear any prior session or cache residue to guarantee strict tenant isolation
+      localStorage.removeItem('cryotech_access_token');
+      localStorage.removeItem('cryotech_refresh_token');
+      localStorage.removeItem('cryotech_company_id');
+
       const data = await authApi.createDemoSession();
       localStorage.setItem('cryotech_access_token', data.accessToken);
       localStorage.setItem('cryotech_refresh_token', data.refreshToken);
@@ -143,11 +150,8 @@ export default function LoginPage() {
           Probar Demostración (Datos de Ejemplo)
         </Button>
 
-        <p className="mt-5 text-center text-sm text-muted-foreground">
-          No tienes cuenta?{' '}
-          <Link to="/register" className="font-medium text-primary hover:text-primary/80 transition-colors">
-            Registrate
-          </Link>
+        <p className="mt-5 text-center text-xs text-muted-foreground">
+          Acceso exclusivo para personal autorizado o evaluación en modo demostración.
         </p>
       </CardContent>
     </Card>

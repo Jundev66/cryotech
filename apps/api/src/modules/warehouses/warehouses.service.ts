@@ -31,7 +31,7 @@ export class WarehousesService {
         _count: { select: { batches: true } },
       },
     });
-    if (!warehouse) throw new NotFoundException('Warehouse not found');
+    if (!warehouse) throw new NotFoundException('Galpón no encontrado');
     return warehouse;
   }
 
@@ -53,7 +53,7 @@ export class WarehousesService {
     const warehouse = await this.prisma.warehouse.findFirst({
       where: { id: warehouseId, companyId },
     });
-    if (!warehouse) throw new NotFoundException('Warehouse not found');
+    if (!warehouse) throw new NotFoundException('Galpón no encontrado');
 
     return this.prisma.warehouse.update({
       where: { id: warehouseId },
@@ -69,14 +69,14 @@ export class WarehousesService {
     const warehouse = await this.prisma.warehouse.findFirst({
       where: { id: warehouseId, companyId },
     });
-    if (!warehouse) throw new NotFoundException('Warehouse not found');
+    if (!warehouse) throw new NotFoundException('Galpón no encontrado');
 
     const activeBatches = await this.prisma.batch.count({
       where: { warehouseId, status: { not: 'finished' } },
     });
     if (activeBatches > 0) {
       throw new BadRequestException(
-        `Cannot delete warehouse: ${activeBatches} active batch(es) still in this warehouse`,
+        `No se puede eliminar el galpón: tiene ${activeBatches} lote(s) activo(s)`,
       );
     }
 

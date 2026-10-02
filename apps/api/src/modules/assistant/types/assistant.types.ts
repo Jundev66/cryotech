@@ -75,6 +75,9 @@ export interface ResolvedDirection {
   counterAccountName: string | null;
 }
 
+/** What the bot may still have to ask about a receipt, in the order it asks. */
+export type ReceiptField = 'amount' | 'date' | 'reference' | 'direction' | 'account';
+
 export interface ResolvedReceipt {
   fields: ReceiptFields;
   direction: ResolvedDirection;
@@ -86,12 +89,21 @@ export interface ResolvedReceipt {
   missing: string[];
   /** Set when this bank reference was already booked. */
   duplicateOf: { id: string; movementDate: Date; amount: string; accountName: string } | null;
+  /**
+   * What the reader could not see and the user still has to tell us, first
+   * one first. Empty or absent means the receipt is ready to classify.
+   */
+  awaiting?: ReceiptField[];
+  /** For money in: whether the payer was matched to a client without doubt. */
+  client?: { confident: boolean };
 }
 
 export const DRAFT_INTENT = {
   RECEIPT_IN: 'receipt_in',
   RECEIPT_OUT: 'receipt_out',
   RECEIPT_INTERNAL: 'receipt_internal',
+  /** Neither account was recognised, so which way the money went is still to be asked. */
+  RECEIPT_INCOMPLETE: 'receipt_incomplete',
 } as const;
 
 /** Button id prefixes. The draft id travels inside the id so a stale tap is a no-op. */
@@ -122,6 +134,12 @@ export const BUTTON = {
   WIZARD: 'wz',
   /** Opens one client's pending sales, from Cobrar: `cs:<clientId>`. Carries no draft. */
   CLIENT_SALES: 'cs',
+  /** Answers a field the reader could not see: `rf:<draftId>:<field>=<value>`. */
+  RECEIPT_FIELD: 'rf',
+  /** Asks who paid before applying a receipt to sales: `cpk:<draftId>`. */
+  CLIENT_PICK: 'cpk',
+  /** Undoes what a wizard just registered: `und:<flowToken>`. */
+  UNDO: 'und',
 } as const;
 
 export function buildButtonId(prefix: string, draftId: string, extra?: string): string {

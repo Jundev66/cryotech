@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { companySchema, exchangeRateConfigSchema, type CompanyInput, type ExchangeRateConfigInput } from '@cryotech/shared-types';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { companySchema, exchangeRateConfigSchema, userProfileUpdateSchema, type CompanyInput, type ExchangeRateConfigInput, type UserProfileUpdateInput } from '@cryotech/shared-types';
 import type { MeasurementUnit, ProductCategoryConfig } from '@cryotech/shared-types';
 import { companiesApi } from '@/api/companies.api';
 import { usersApi } from '@/api/users.api';
@@ -130,14 +130,15 @@ function ProfileSection() {
   const { user, setUser } = useAuth();
   const [profileLoading, setProfileLoading] = useState(false);
 
-  const profileForm = useForm({
+  const profileForm = useForm<UserProfileUpdateInput>({
+    resolver: zodResolver(userProfileUpdateSchema),
     defaultValues: {
-      fullName: user?.fullName || '',
-      phone: user?.phone || '',
+      fullName: user?.fullName ?? '',
+      phone: user?.phone ?? '',
     },
   });
 
-  async function onProfileSave(values: { fullName: string; phone: string }) {
+  async function onProfileSave(values: UserProfileUpdateInput) {
     setProfileLoading(true);
     try {
       const updated = await usersApi.updateProfile(values);
@@ -160,25 +161,41 @@ function ProfileSection() {
         <CardDescription>Tu informacion personal</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={profileForm.handleSubmit(onProfileSave)} className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">Nombre completo</label>
-            <Input {...profileForm.register('fullName')} />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Telefono</label>
-            <Input {...profileForm.register('phone')} />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Email</label>
-            <Input value={user?.email || ''} disabled />
-            <p className="mt-1 text-xs text-muted-foreground">El email no se puede cambiar</p>
-          </div>
-          <Button type="submit" disabled={profileLoading}>
-            {profileLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Actualizar perfil
-          </Button>
-        </form>
+        <Form {...profileForm}>
+          <form onSubmit={profileForm.handleSubmit(onProfileSave)} className="space-y-4">
+            <FormField
+              control={profileForm.control}
+              name="fullName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nombre completo</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={profileForm.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Telefono</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div>
+              <label className="text-sm font-medium">Email</label>
+              <Input value={user?.email || ''} disabled />
+              <p className="mt-1 text-xs text-muted-foreground">El email no se puede cambiar</p>
+            </div>
+            <Button type="submit" disabled={profileLoading}>
+              {profileLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Actualizar perfil
+            </Button>
+          </form>
+        </Form>
       </CardContent>
     </Card>
   );

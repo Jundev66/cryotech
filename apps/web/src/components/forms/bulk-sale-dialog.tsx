@@ -38,7 +38,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 /** The reference price of the business; each row can override it. */
-const DEFAULT_PRICE_PER_KG = 4;
+const DEFAULT_PRICE_PER_KG = 4.5;
 
 function emptyRow(saleType: 'live' | 'dead') {
   return {

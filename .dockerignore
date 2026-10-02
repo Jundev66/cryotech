@@ -1,8 +1,19 @@
+# Patterns here match from the build context root only, so each one is also
+# given with `**/`. Without that, a build from a machine that already ran
+# `pnpm install` copied apps/*/node_modules and packages/*/node_modules — full of
+# host symlinks — over the ones installed in the image, and apps/api/.env, with
+# its secrets, into the builder stage.
 node_modules
+**/node_modules
 .git
 .env
 .env.*
+**/.env
+**/.env.*
 *.md
 dist
+**/dist
 .next
 .turbo
+**/.turbo
+**/*.traineddata

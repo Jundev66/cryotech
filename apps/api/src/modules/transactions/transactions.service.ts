@@ -6,6 +6,7 @@ import { TRANSACTION_CATEGORY_LABELS } from '@cryotech/shared-types';
 import { SequenceService } from '../../common/services/sequence.service';
 import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
 import { MovementsService } from '../treasury/movements.service';
+import { amountForAccount } from '../treasury/account-amount';
 import type { TransactionInput } from '@cryotech/shared-types';
 
 @Injectable()
@@ -92,7 +93,12 @@ export class TransactionsService {
           {
             accountId: input.accountId,
             direction: input.type === 'income' ? 'in' : 'out',
-            amount: account.currency === 'USD' ? input.amount : amountBs,
+            amount: amountForAccount({
+              accountCurrency: account.currency,
+              amountBs,
+              amountUsd: isUsd ? input.amount : null,
+              rate: exchangeRate,
+            }),
             movementDate: transactionDate,
             reference: input.reference ?? null,
             concept: input.description ?? null,
@@ -105,6 +111,33 @@ export class TransactionsService {
 
       return transaction;
     });
+  }
+
+  /**
+   * Undoes an income or expense that was recorded by hand — from the web or
+   * the bot — along with the money it moved.
+   *
+   * Only `manual` ones: a purchase, a slaughter or a sale payment booked its
+   * transaction as a consequence, and removing the transaction alone would
+   * leave that operation paid or received with nothing on the books.
+   */
+  async voidManual(companyId: string, transactionId: string) {
+    const transaction = await this.prisma.transaction.findFirst({
+      where: { id: transactionId, companyId },
+    });
+    if (!transaction) throw new NotFoundException('Transaccion no encontrada');
+    if (transaction.sourceType !== 'manual') {
+      throw new BadRequestException(
+        'Solo se anulan ingresos o gastos registrados a mano. Este viene de otra operación: corrígelo desde ella.',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.movements.reverseBySource(tx, companyId, 'transaction', transaction.id);
+      await tx.transaction.delete({ where: { id: transaction.id } });
+    });
+
+    return { success: true, code: transaction.code };
   }
 
   async findAll(
@@ -182,7 +215,7 @@ export class TransactionsService {
     }
 
     const [transactions, pendingSales, rateResult] = await Promise.all([
-      this.prisma.transaction.findMany({ where, select: { type: true, amount: true, exchangeRate: true } }),
+      this.prisma.transaction.findMany({ where, select: { type: true, category: true, amount: true, exchangeRate: true } }),
       this.prisma.sale.findMany({
         where: { companyId, paymentStatus: { in: ['pending', 'partial'] } },
         select: { totalAmount: true, paidAmount: true },
@@ -190,15 +223,19 @@ export class TransactionsService {
       this.exchangeRates.getCurrentRate(companyId),
     ]);
 
-    const incomeBs = transactions
-      .filter((t) => t.type === 'income')
-      .reduce((sum, t) => sum + Number(t.amount), 0);
+    // What the owner put in or took out moves the cash but is not income or an
+    // expense of the business. Counted as such it inflated both cards, while
+    // reports, the dashboard and the bot's summaries already left it out.
+    const capital = new Set(['capital_in', 'owner_draw']);
+    const total = (rows: typeof transactions) => rows.reduce((sum, t) => sum + Number(t.amount), 0);
 
-    const expensesBs = transactions
-      .filter((t) => t.type === 'expense')
-      .reduce((sum, t) => sum + Number(t.amount), 0);
+    const incomeBs = total(transactions.filter((t) => t.type === 'income' && !capital.has(t.category)));
+    const expensesBs = total(transactions.filter((t) => t.type === 'expense' && !capital.has(t.category)));
+    const capitalInBs = total(transactions.filter((t) => t.category === 'capital_in'));
+    const ownerDrawBs = total(transactions.filter((t) => t.category === 'owner_draw'));
 
-    const balanceBs = incomeBs - expensesBs;
+    // Cash on hand is still everything that came in minus everything that left.
+    const balanceBs = incomeBs - expensesBs + capitalInBs - ownerDrawBs;
     const rate = rateResult.effectiveRate || 1;
 
     const receivablesUsd = pendingSales.reduce(
@@ -206,19 +243,17 @@ export class TransactionsService {
       0,
     );
 
+    const money = (bs: number) => ({
+      bs: Math.round(bs * 100) / 100,
+      usd: Math.round((bs / rate) * 100) / 100,
+    });
+
     return {
-      income: {
-        bs: Math.round(incomeBs * 100) / 100,
-        usd: Math.round((incomeBs / rate) * 100) / 100,
-      },
-      expenses: {
-        bs: Math.round(expensesBs * 100) / 100,
-        usd: Math.round((expensesBs / rate) * 100) / 100,
-      },
-      balance: {
-        bs: Math.round(balanceBs * 100) / 100,
-        usd: Math.round((balanceBs / rate) * 100) / 100,
-      },
+      income: money(incomeBs),
+      expenses: money(expensesBs),
+      capitalIn: money(capitalInBs),
+      ownerDraw: money(ownerDrawBs),
+      balance: money(balanceBs),
       receivables: {
         usd: Math.round(receivablesUsd * 100) / 100,
         count: pendingSales.length,

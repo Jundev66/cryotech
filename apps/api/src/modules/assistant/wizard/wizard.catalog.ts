@@ -1,4 +1,4 @@
-import type { FlowKind } from '../flows/flow.catalog';
+import type { OperationKind } from '../flows/flow.catalog';
 
 /**
  * What kind of answer a question takes.
@@ -39,12 +39,44 @@ const PAYMENT_OPTIONS = [
   { id: 'pending', title: '📋 Fiada', description: 'Queda debiendo' },
 ];
 
+const CURRENCY_OPTIONS = [
+  { id: 'VES', title: '🇻🇪 Bolívares' },
+  { id: 'USD', title: '💵 Dólares' },
+];
+
+/**
+ * The categories a quick expense can take.
+ *
+ * Feed and chicks are not here on purpose: they are purchases, which move stock
+ * and leave something to pay. Offered as a plain expense, the same saco ends up
+ * on the books twice — once as the purchase, once as the "gasto".
+ */
+export const EXPENSE_WIZARD_CATEGORIES = [
+  { id: 'transport', title: '🚚 Transporte y gasoil', description: 'Flete, combustible, pasajes' },
+  { id: 'labor', title: '👷 Mano de obra', description: 'Obreros, jornales, sueldos' },
+  { id: 'utility', title: '💡 Servicios', description: 'Luz, agua, gas, internet' },
+  { id: 'vaccine', title: '💉 Vacunas y medicinas', description: 'Vacunas, vitaminas, desinfectante' },
+  { id: 'other', title: '🧾 Otro gasto', description: 'Lo que no encaja arriba' },
+  { id: 'owner_draw', title: '🏠 Retiro del dueño', description: 'Dinero para ti, no es gasto del negocio' },
+];
+
 /** The four supply questions all hang off the same answer. */
 function notAddingSupplies(answers: Record<string, string>): boolean {
   return answers.add_supplies !== 'yes';
 }
 
-export const WIZARDS: Record<FlowKind, { title: string; steps: WizardStep[] }> = {
+/**
+ * Only the accounts that hold the currency already chosen.
+ *
+ * Offering a dollar account for a payment in bolivares is how a balance ends up
+ * off by the exchange rate; "Sin cuenta" closes every list for money that did
+ * not pass through one.
+ */
+function accountsFor(answers: Record<string, string>): string {
+  return answers.currency === 'USD' ? 'accountsUsd' : 'accountsVes';
+}
+
+export const WIZARDS: Record<OperationKind, { title: string; steps: WizardStep[] }> = {
   sale: {
     title: '🧾 Registrar una venta',
     steps: [
@@ -70,6 +102,16 @@ export const WIZARDS: Record<FlowKind, { title: string; steps: WizardStep[] }> =
       },
       { key: 'sale_date', question: '¿Qué día fue?', kind: 'date' },
       { key: 'payment', question: '¿Cómo quedó?', kind: 'choice', fixedOptions: PAYMENT_OPTIONS },
+      // "Pagada" used to book nothing and ask for a screenshot, so a sale paid
+      // in cash stayed owing forever. Naming where the money went records the
+      // payment on the spot; the screenshot is still one of the options.
+      {
+        key: 'payment_account',
+        question: '¿Dónde entró el pago?',
+        kind: 'choice',
+        optionsKey: 'paymentAccounts',
+        skipIf: (answers) => answers.payment !== 'paid',
+      },
     ],
   },
 
@@ -210,9 +252,67 @@ export const WIZARDS: Record<FlowKind, { title: string; steps: WizardStep[] }> =
       },
     ],
   },
+
+  // A cost paid in cash, or with no screenshot to forward. Before this, the
+  // only way to record an expense was to photograph a bank transfer.
+  expense: {
+    title: '💸 Registrar un gasto',
+    steps: [
+      {
+        key: 'category',
+        question: '¿Qué gasto es?',
+        kind: 'choice',
+        fixedOptions: EXPENSE_WIZARD_CATEGORIES,
+        hint:
+          'Alimento y pollitos van por 📦 Registrar una compra. Una compra o beneficio ya registrado se paga desde 💸 Pagos y gastos, no aquí',
+      },
+      {
+        key: 'amount',
+        question: '¿Cuánto fue?',
+        kind: 'number',
+        hint: 'Solo el número, por ejemplo 20 o 1.500,50',
+      },
+      { key: 'currency', question: '¿En qué moneda?', kind: 'choice', fixedOptions: CURRENCY_OPTIONS },
+      { key: 'account', question: '¿De dónde salió el dinero?', kind: 'choice', optionsKey: accountsFor },
+      { key: 'batch', question: '¿Es de algún lote?', kind: 'choice', optionsKey: 'batches' },
+      {
+        key: 'description',
+        question: '¿Una nota para reconocerlo?',
+        kind: 'text',
+        optional: true,
+        hint: 'Por ejemplo: gasoil del camión',
+      },
+      { key: 'expense_date', question: '¿Qué día fue?', kind: 'date' },
+    ],
+  },
+
+  // Money received in cash, Zelle or anything else with no receipt to read.
+  // "Repartir" spreads it oldest sale first, which is how people actually pay
+  // a running tab.
+  collect: {
+    title: '💵 Registrar un cobro',
+    steps: [
+      { key: 'client', question: '¿Quién te pagó?', kind: 'choice', optionsKey: 'debtors' },
+      {
+        key: 'sale',
+        question: '¿A qué venta lo aplico?',
+        kind: 'choice',
+        optionsKey: (answers) => `sales_${answers.client}`,
+      },
+      { key: 'currency', question: '¿En qué moneda te pagó?', kind: 'choice', fixedOptions: CURRENCY_OPTIONS },
+      {
+        key: 'amount',
+        question: '¿Cuánto te pagó?',
+        kind: 'number',
+        hint: 'Solo el número, por ejemplo 50 o 2.000,00',
+      },
+      { key: 'account', question: '¿Dónde entró el dinero?', kind: 'choice', optionsKey: accountsFor },
+      { key: 'payment_date', question: '¿Qué día te pagó?', kind: 'date' },
+    ],
+  },
 };
 
 /** The questions that actually apply, given what has been answered so far. */
-export function visibleSteps(kind: FlowKind, answers: Record<string, string>): WizardStep[] {
+export function visibleSteps(kind: OperationKind, answers: Record<string, string>): WizardStep[] {
   return WIZARDS[kind].steps.filter((step) => !step.skipIf?.(answers));
 }

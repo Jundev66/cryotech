@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { TelegramApiService } from './telegram-api.service';
 import { TelegramCallbackService } from './telegram-callback-data';
-import { toInlineKeyboard, toTelegramHtml } from './telegram-renderer';
+import { splitMessage, toInlineKeyboard, toTelegramHtml } from './telegram-renderer';
 import { ChannelRegistryService } from '../assistant/inbound/channel-registry.service';
 import type { ChannelSender, InboundEnvelope } from '../assistant/inbound/channel.port';
 import type { TelegramMessage, TelegramUpdate } from './telegram.schema';
@@ -43,6 +43,14 @@ export class TelegramTransportService implements ChannelSender, OnModuleInit {
     const chatId = chatIdOf(update);
     if (!chatId) return null;
 
+    // Only private chats. The allowlist holds people, and a group's id with its
+    // minus sign stripped by the id normaliser could even coincide with one of
+    // them — every member of that group would then operate the books.
+    if (!isPrivateChat(update)) {
+      this.logger.warn(`Ignoring update ${update.update_id} from a non-private chat`);
+      return null;
+    }
+
     if (update.callback_query) {
       void this.api.answerCallbackQuery(update.callback_query.id);
     }
@@ -71,7 +79,7 @@ export class TelegramTransportService implements ChannelSender, OnModuleInit {
    */
   async toIncoming(update: TelegramUpdate): Promise<IncomingMessage | null> {
     const chatId = chatIdOf(update);
-    if (!chatId) return null;
+    if (!chatId || !isPrivateChat(update)) return null;
 
     const base = {
       channel: TELEGRAM_CHANNEL,
@@ -117,12 +125,21 @@ export class TelegramTransportService implements ChannelSender, OnModuleInit {
     return null;
   }
 
+  /**
+   * Sends a reply, in as many messages as Telegram's length limit needs.
+   *
+   * Over 4096 characters the whole message is rejected, and the user got
+   * nothing. The buttons ride on the last part: that is where the question is.
+   */
   async send(to: string, message: OutgoingMessage): Promise<void> {
     const keyboard = message.buttons?.length
       ? toInlineKeyboard(message.buttons, (id) => this.callbacks.encode(id))
       : undefined;
 
-    await this.api.sendMessage(to, toTelegramHtml(message.text), keyboard);
+    const parts = splitMessage(message.text);
+    for (const [index, part] of parts.entries()) {
+      await this.api.sendMessage(to, toTelegramHtml(part), index === parts.length - 1 ? keyboard : undefined);
+    }
   }
 
   /**
@@ -181,6 +198,19 @@ function chatIdOf(update: TelegramUpdate): string | null {
     update.callback_query?.message?.chat.id ??
     update.callback_query?.from.id;
   return id === undefined ? null : String(id);
+}
+
+/**
+ * Whether the update comes from a one-to-one chat with a person.
+ *
+ * Telegram states the type; when it is missing, a private chat is the only
+ * kind with a positive id. A tap whose message is too old to be sent back has
+ * no chat at all, and comes from the person who tapped.
+ */
+function isPrivateChat(update: TelegramUpdate): boolean {
+  const chat = update.message?.chat ?? update.callback_query?.message?.chat;
+  if (!chat) return true;
+  return chat.type ? chat.type === 'private' : chat.id > 0;
 }
 
 /** What the ledger records. Coarse on purpose: it is for reading, not routing. */

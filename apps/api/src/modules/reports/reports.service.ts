@@ -278,8 +278,9 @@ export class ReportsService {
         ? Math.round((totalRevenueBs / soldCount) * 100) / 100
         : 0;
 
-      // Alive in corral = initial - dead - sold - processed
-      const inCorral = batch.initialQuantity - mortality - soldCount - processedCount;
+      // Alive in corral = initial - dead - soldLive - processed
+      // (soldDead comes from cava/processedStock, so it must not be subtracted twice)
+      const inCorral = Math.max(0, batch.initialQuantity - mortality - soldLiveCount - processedCount);
       const costPerChicken = calculateCostPerChicken(totalExpenses, inCorral, batch.currentQuantity);
 
       const mortalityPct = calculateMortalityRate(mortality, batch.initialQuantity);

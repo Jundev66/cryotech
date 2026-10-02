@@ -9,6 +9,11 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const logger = new Logger('Bootstrap');
 
+  // Without this, `onModuleDestroy` never runs on SIGTERM — which is how a
+  // redeploy or a sleeping free instance stops — and receipts still batching
+  // lose their summary, and the OCR worker is killed mid-read.
+  app.enableShutdownHooks();
+
   // Behind nginx every request otherwise looks like it came from the proxy, so
   // the rate limiter would count the whole world as one client — one abusive
   // caller would lock everyone out. One hop, not `true`: trusting the entire

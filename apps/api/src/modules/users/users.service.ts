@@ -17,7 +17,10 @@ export class UsersService {
   async updateProfile(userId: string, data: { fullName?: string; phone?: string }) {
     return this.prisma.user.update({
       where: { id: userId },
-      data: { fullName: data.fullName || null, phone: data.phone || null },
+      data: {
+        ...(data.fullName !== undefined && { fullName: data.fullName || null }),
+        ...(data.phone !== undefined && { phone: data.phone || null }),
+      },
       select: { id: true, email: true, fullName: true, phone: true, avatarUrl: true },
     });
   }

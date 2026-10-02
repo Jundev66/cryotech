@@ -1,17 +1,21 @@
 import { useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TRANSACTION_CATEGORY_LABELS, formatDate, formatCurrency } from '@cryotech/shared-types';
+import type { Transaction } from '@cryotech/shared-types';
 import { transactionsApi } from '@/api/transactions.api';
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { TrendingUp, TrendingDown, Wallet, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Clock, Undo2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { SearchInput } from '@/components/ui/search-input';
 import { useListSearch } from '@/hooks/use-list-search';
+import { apiMessage } from '@/lib/api-error';
+import { toast } from 'sonner';
 
 function formatUsd(value: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(value);
@@ -21,6 +25,8 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   entry: 'Entrada de Insumo',
   sale_payment: 'Cobro de Venta',
   processing: 'Beneficio',
+  // Everything recorded by hand: from this web or from the Telegram bot.
+  manual: 'Registro manual / bot',
 };
 
 function getSourceTypeLabel(sourceType: string | null | undefined): string {
@@ -30,6 +36,7 @@ function getSourceTypeLabel(sourceType: string | null | undefined): string {
 
 const SOURCE_TYPE_OPTIONS = [
   { value: 'all', label: 'Todos los origenes' },
+  { value: 'manual', label: 'Registro manual / bot' },
   { value: 'entry', label: 'Entrada de Insumo' },
   { value: 'sale_payment', label: 'Cobro de Venta' },
   { value: 'processing', label: 'Beneficio' },
@@ -37,6 +44,7 @@ const SOURCE_TYPE_OPTIONS = [
 ] as const;
 
 export default function TransactionsPage() {
+  const queryClient = useQueryClient();
   const [typeFilter, setTypeFilter] = useState('all');
   const [sourceTypeFilter, setSourceTypeFilter] = useState('all');
 
@@ -62,15 +70,39 @@ export default function TransactionsPage() {
     queryFn: () => transactionsApi.getCashFlow(),
   });
 
+  // Only what was recorded by hand can be undone here: the rest belongs to a
+  // sale, a purchase or a slaughter, and is corrected there.
+  const voidMutation = useMutation({
+    mutationFn: (id: string) => transactionsApi.voidManual(id),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      toast.success(`Registro ${result.code ?? ''} anulado`.replace('  ', ' '));
+    },
+    onError: (error) => toast.error(apiMessage(error, 'No se pudo anular el registro')),
+  });
+
+  function confirmVoid(transaction: Transaction) {
+    const label = TRANSACTION_CATEGORY_LABELS[transaction.category] || transaction.category;
+    const ok = window.confirm(
+      `¿Anular ${transaction.code ?? 'este registro'} (${label}, ${formatCurrency(transaction.amount)})?\n\n` +
+        'Se borra el registro y se devuelve el dinero al saldo de su cuenta. No se puede deshacer.',
+    );
+    if (ok) voidMutation.mutate(transaction.id);
+  }
+
   const filtered = (transactions ?? []).filter((t) => {
     if (typeFilter !== 'all' && t.type !== typeFilter) return false;
     if (sourceTypeFilter === 'legacy' && t.sourceType != null) return false;
     return true;
   });
 
+  const capitalIn = cashFlow?.capitalIn.bs ?? 0;
+  const ownerDraw = cashFlow?.ownerDraw.bs ?? 0;
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Finanzas" subtitle="Registro de ingresos y gastos (solo lectura)" />
+      <PageHeader title="Finanzas" subtitle="Registro de ingresos y gastos" />
 
       <SearchInput
         value={searchValue}
@@ -123,6 +155,11 @@ export default function TransactionsPage() {
                   {formatCurrency(cashFlow?.balance.bs ?? 0)}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">{formatUsd(cashFlow?.balance.usd ?? 0)}</div>
+                {(capitalIn > 0 || ownerDraw > 0) && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Incluye aportes {formatCurrency(capitalIn)} y retiros {formatCurrency(ownerDraw)} del dueño
+                  </div>
+                )}
               </>
             )}
           </CardContent>
@@ -184,6 +221,7 @@ export default function TransactionsPage() {
                   <TableHead>Descripcion</TableHead>
                   <TableHead className="text-right">Monto (Bs)</TableHead>
                   <TableHead className="text-right">Equiv. ($)</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -205,6 +243,20 @@ export default function TransactionsPage() {
                     </TableCell>
                     <TableCell className="text-right text-xs text-muted-foreground">
                       {usdEquiv !== null ? formatUsd(usdEquiv) : '—'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {t.sourceType === 'manual' && (
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          title="Anular"
+                          data-testid="transaction-void"
+                          disabled={voidMutation.isPending}
+                          onClick={() => confirmVoid(t)}
+                        >
+                          <Undo2 className="h-3 w-3" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                   );

@@ -4,7 +4,7 @@
 # Todo target sin archivo va aquí. Un nombre declarado aquí sin receta Make lo
 # da por hecho y sigue en silencio — así fue como `dev` pedía `dev-api` y
 # `dev-web`, que no existen, y durante meses solo arrancó la base de datos.
-.PHONY: help setup dev dev-bg api web stop stop-web stop-api stop-db stop-all \
+.PHONY: help setup dev dev-bg api web landing stop stop-web stop-api stop-db stop-all \
         build build-types build-api build-web \
         db-migrate db-studio db-generate \
         docker-up docker-down \
@@ -58,6 +58,11 @@ web: setup ## Arranca la web en segundo plano (:3002)
 stop-web: ## Detiene la web
 	@-lsof -ti :3002 | xargs kill 2>/dev/null || true
 	@echo "Web detenida"
+
+# --- Landing Page ---
+landing: ## Arranca la landing page de demostración (:3005)
+	@cd apps/landing && pnpm exec vite --port 3005
+
 
 # --- Build ---
 build: ## Compila todo

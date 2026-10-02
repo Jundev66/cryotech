@@ -14,3 +14,4 @@ export * from './types';
 // Utils
 export * from './utils/metrics';
 export * from './utils/dates';
+export * from './utils/fuzzy';

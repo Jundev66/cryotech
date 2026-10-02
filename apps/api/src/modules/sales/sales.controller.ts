@@ -12,9 +12,11 @@ import {
   saleSchema,
   bulkSaleSchema,
   salePaymentSchema,
+  genericPaymentSchema,
   type SaleInput,
   type BulkSaleInput,
   type SalePaymentInput,
+  type GenericPaymentInput,
 } from '@cryotech/shared-types';
 
 @Controller('sales')
@@ -54,6 +56,15 @@ export class SalesController {
     return this.salesService.createMany(companyId, body);
   }
 
+  @Post('payment')
+  @RequirePermission('sales', 'edit')
+  registerPaymentDirect(
+    @CurrentCompanyId() companyId: string,
+    @Body(new ZodValidationPipe(genericPaymentSchema)) body: GenericPaymentInput,
+  ) {
+    return this.salesService.registerPaymentByClientOrSale(companyId, body);
+  }
+
   @Post()
   @RequirePermission('sales', 'create')
   create(@CurrentCompanyId() companyId: string, @Body(new ZodValidationPipe(saleSchema)) body: SaleInput) {
@@ -74,6 +85,17 @@ export class SalesController {
   @RequirePermission('sales', 'view')
   getPayments(@CurrentCompanyId() companyId: string, @Param('id') id: string) {
     return this.salesService.getPayments(companyId, id);
+  }
+
+  /** Undoes one payment: its income, its treasury movement and the sale's balance. */
+  @Delete(':id/payments/:paymentId')
+  @RequirePermission('sales', 'delete')
+  voidPayment(
+    @CurrentCompanyId() companyId: string,
+    @Param('id') id: string,
+    @Param('paymentId') paymentId: string,
+  ) {
+    return this.salesService.voidPayment(companyId, id, paymentId);
   }
 
   @Patch(':id')

@@ -4,6 +4,7 @@ import { useCompany } from '@/providers/company-provider';
 import { useTheme } from '@/hooks/use-theme';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { LogOut, Building2, ChevronDown, Menu, Sun, Moon } from 'lucide-react';
+import { LogOut, Building2, ChevronDown, Menu, Sun, Moon, Sparkles } from 'lucide-react';
 
 export function AppHeader({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
   const { user, logout } = useAuth();
@@ -41,6 +42,16 @@ export function AppHeader({ onToggleSidebar }: { onToggleSidebar?: () => void })
       </Button>
 
       <Breadcrumb />
+
+      {company?.isDemo && (
+        <Badge
+          variant="outline"
+          className="hidden sm:inline-flex items-center gap-1.5 border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2.5 py-1 text-xs font-semibold"
+        >
+          <Sparkles className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
+          <span>Modo Demostración</span>
+        </Badge>
+      )}
 
       {companies.length > 1 && (
         <DropdownMenu>

@@ -104,9 +104,15 @@ export function formatDate(date: string | null | undefined): string {
   if (!date) return '-';
   const d = new Date(date);
   if (isNaN(d.getTime())) return '-';
+  // A calendar date — a DATE column — arrives as that day's UTC midnight. Read
+  // in a browser in Venezuela, UTC-4, that is the evening before, and every
+  // sale, payment and expense showed up one day early. Those are shown in UTC;
+  // real timestamps keep the viewer's zone.
+  const isCalendarDate = /^\d{4}-\d{2}-\d{2}$/.test(date) || /T00:00:00(\.000)?Z$/.test(date);
   return d.toLocaleDateString('es-VE', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    ...(isCalendarDate ? { timeZone: 'UTC' } : {}),
   });
 }

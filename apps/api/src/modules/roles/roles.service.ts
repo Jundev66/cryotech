@@ -18,7 +18,7 @@ export class RolesService {
     const role = await this.prisma.role.findFirst({
       where: { id: roleId, companyId },
     });
-    if (!role) throw new NotFoundException('Role not found');
+    if (!role) throw new NotFoundException('Rol no encontrado');
     return role;
   }
 
@@ -26,7 +26,7 @@ export class RolesService {
     const existing = await this.prisma.role.findUnique({
       where: { companyId_name: { companyId, name: input.name } },
     });
-    if (existing) throw new BadRequestException('A role with this name already exists');
+    if (existing) throw new BadRequestException('Ya existe un rol con ese nombre');
 
     return this.prisma.role.create({
       data: {
@@ -54,7 +54,7 @@ export class RolesService {
     const role = await this.prisma.role.findFirst({
       where: { id: roleId, companyId },
     });
-    if (!role) throw new NotFoundException('Role not found');
+    if (!role) throw new NotFoundException('Rol no encontrado');
 
     if (member && !member.isOwner && member.roleId === roleId) {
       throw new ForbiddenException(
@@ -66,7 +66,7 @@ export class RolesService {
       const existing = await this.prisma.role.findUnique({
         where: { companyId_name: { companyId, name: input.name } },
       });
-      if (existing) throw new BadRequestException('A role with this name already exists');
+      if (existing) throw new BadRequestException('Ya existe un rol con ese nombre');
     }
 
     return this.prisma.role.update({
@@ -82,7 +82,7 @@ export class RolesService {
     const role = await this.prisma.role.findFirst({
       where: { id: roleId, companyId },
     });
-    if (!role) throw new NotFoundException('Role not found');
+    if (!role) throw new NotFoundException('Rol no encontrado');
 
     // Check if any members are using this role
     const membersUsingRole = await this.prisma.companyMember.count({
@@ -90,7 +90,7 @@ export class RolesService {
     });
     if (membersUsingRole > 0) {
       throw new BadRequestException(
-        `Cannot delete role: ${membersUsingRole} member(s) are still assigned to it`,
+        `No se puede eliminar el rol: ${membersUsingRole} miembro(s) lo tienen asignado`,
       );
     }
 

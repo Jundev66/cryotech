@@ -790,7 +790,7 @@ async function main() {
       { title: 'Cobrar una venta', mustSay: [new RegExp(MARKER)], note: 'nombra al cliente que debe' },
       // Processing and purchases now share one menu row; it has to list both.
       {
-        title: 'Pagar algo pendiente',
+        title: 'Pagos y gastos',
         mustSay: [new RegExp(`${MARKER}-BEN|Carmen E2E|2\\.450`), /3\.200|Agropecuaria E2E/],
         note: 'lista el beneficio y la compra sin pagar',
       },

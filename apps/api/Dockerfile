@@ -1,5 +1,7 @@
 FROM node:22-alpine AS base
-RUN corepack enable && corepack prepare pnpm@9 --activate
+# The exact version the lockfile was written with. A floating `pnpm@9` can pick
+# a release that computes the lockfile differently and fails the frozen install.
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 FROM base AS deps
 WORKDIR /app
@@ -29,6 +31,15 @@ COPY apps/api ./apps/api
 RUN cd packages/shared-types && pnpm build
 RUN cd apps/api && npx prisma generate && pnpm build
 
+# El modelo de español de Tesseract, dentro de la imagen. Sin esto se bajaba de
+# jsDelivr en cada arranque — y una instancia gratuita de Render arranca cada
+# vez que despierta —, a un directorio que el usuario `node` quizá no podía
+# escribir. Si el CDN fallaba, no había OCR hasta el siguiente reinicio.
+RUN mkdir -p apps/api/tessdata && node -e "\
+  fetch('https://cdn.jsdelivr.net/npm/@tesseract.js-data/spa/4.0.0_best_int/spa.traineddata.gz') \
+    .then((r) => { if (!r.ok) throw new Error('traineddata HTTP ' + r.status); return r.arrayBuffer(); }) \
+    .then((b) => require('fs').writeFileSync('apps/api/tessdata/spa.traineddata.gz', Buffer.from(b)))"
+
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -53,6 +64,10 @@ COPY --from=builder --chown=node:node /app/apps/api/node_modules ./apps/api/node
 COPY --from=builder --chown=node:node /app/apps/api/dist ./apps/api/dist
 COPY --from=builder --chown=node:node /app/apps/api/prisma ./apps/api/prisma
 COPY --from=builder --chown=node:node /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder --chown=node:node /app/apps/api/tessdata ./apps/api/tessdata
+
+# Where the reader finds the model above; it never goes to the network for it.
+ENV OCR_LANG_PATH=/app/apps/api/tessdata
 
 # The container held real credentials in its environment and spoke to the
 # database with full privileges — running all that as root meant any code

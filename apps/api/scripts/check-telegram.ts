@@ -27,7 +27,7 @@ import {
 } from '../src/modules/telegram/telegram-callback-data';
 import { toInlineKeyboard, toTelegramHtml } from '../src/modules/telegram/telegram-renderer';
 import { WIZARDS } from '../src/modules/assistant/wizard/wizard.catalog';
-import type { FlowKind } from '../src/modules/assistant/flows/flow.catalog';
+import type { OperationKind } from '../src/modules/assistant/flows/flow.catalog';
 import { parseButtonId, type OutgoingMessage } from '../src/modules/assistant/types/assistant.types';
 import { targetCompany } from './lib/test-company';
 import { resolveTestDebtor } from './lib/test-debtor';
@@ -168,7 +168,7 @@ async function main() {
   const TERMINAL = /Cancelar|Ver más|Registrar|Confirmar|Guardar/i;
 
   try {
-    for (const kind of Object.keys(WIZARDS) as FlowKind[]) {
+    for (const kind of Object.keys(WIZARDS) as OperationKind[]) {
       let reply: OutgoingMessage | null = await assistant.openOperation(
         companyId, kind, CHANNEL, USER,
       );

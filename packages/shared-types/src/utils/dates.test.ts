@@ -8,12 +8,23 @@ describe('isoDate', () => {
 });
 
 describe('startOfToday', () => {
-  it('is local midnight', () => {
-    const midnight = startOfToday();
-    expect(midnight.getHours()).toBe(0);
-    expect(midnight.getMinutes()).toBe(0);
-    expect(midnight.getSeconds()).toBe(0);
-    expect(midnight.getMilliseconds()).toBe(0);
+  it('is UTC midnight of the farm day, the instant a DATE column holds', () => {
+    // 14:00 in Caracas on the 22nd.
+    expect(startOfToday('America/Caracas', new Date('2026-05-22T18:00:00Z')).toISOString()).toBe(
+      '2026-05-22T00:00:00.000Z',
+    );
+  });
+
+  it('is still that day at 9 pm in Caracas, when UTC is already on the next one', () => {
+    expect(startOfToday('America/Caracas', new Date('2026-05-23T01:00:00Z')).toISOString()).toBe(
+      '2026-05-22T00:00:00.000Z',
+    );
+  });
+
+  it('makes a sale due today not yet overdue', () => {
+    const dueToday = new Date('2026-05-22T00:00:00.000Z');
+    const today = startOfToday('America/Caracas', new Date('2026-05-22T23:30:00Z'));
+    expect(dueToday < today).toBe(false);
   });
 });
 

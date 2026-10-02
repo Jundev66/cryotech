@@ -25,6 +25,8 @@ export interface Company {
   taxId: string | null;
   phone: string | null;
   address: string | null;
+  isDemo?: boolean;
+  expiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

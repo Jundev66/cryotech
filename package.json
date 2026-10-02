@@ -12,6 +12,12 @@
     "db:migrate": "pnpm --filter @cryotech/api exec prisma migrate dev",
     "db:generate": "pnpm --filter @cryotech/api exec prisma generate",
     "db:studio": "pnpm --filter @cryotech/api exec prisma studio",
+    "mobile": "pnpm --filter @cryotech/mobile dev",
+    "mobile:build": "pnpm --filter @cryotech/mobile build:mobile",
+    "mobile:android": "pnpm --filter @cryotech/mobile cap:android",
+    "landing": "pnpm --filter @cryotech/landing dev",
+    "landing:build": "pnpm --filter @cryotech/landing build",
+    "landing:preview": "pnpm --filter @cryotech/landing preview",
     "e2e": "pnpm --filter @cryotech/web e2e",
     "e2e:clean": "pnpm --filter @cryotech/api e2e:clean --apply"
   },

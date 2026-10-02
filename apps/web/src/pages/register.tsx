@@ -96,7 +96,7 @@ export default function RegisterPage() {
                 <FormItem>
                   <FormLabel>Contrasena</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="Minimo 6 caracteres" className="h-11" {...field} />
+                    <Input type="password" placeholder="Mín. 10 chars, mayúscula y número" className="h-11" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

@@ -77,6 +77,32 @@ lo necesita: se autentica con un secreto en cabecera, guarda lo no entregado
 24 h por su cuenta, y la API ya tiene URL pública en Render (`render.yaml`).
 Entrega directa en `/api/telegram/webhook`.
 
+## Asistente de Telegram: qué automatiza
+
+Nada entra a los libros sin tocar **Registrar**; lo que sigue solo reduce
+cuánto hay que escribir o tocar.
+
+| Operación | Cómo se hace | Dónde vive |
+|-----------|--------------|------------|
+| Gasto | `gasto 20$ gasoil`, `gasté 20 mil bs luz` (o 💸 Pagos y gastos) | `assistant/quick-entry/`, asistente `expense` |
+| Cobro sin captura | `cobré 50$ pedro`, `pedro pagó 50 dólares` (o 💵 Cobro sin captura) | asistente `collect`, `executors/sale-payment.allocator.ts` |
+| Venta pagada | "💵 Pagada" pregunta la cuenta y registra el cobro al momento | `flows/flow-submission.service.ts` |
+| Venta fiada | Vence a los `ASSISTANT_DEFAULT_CREDIT_DAYS` (7) | ídem |
+| Comprobante | Foto. Lo que el OCR no lee (monto, fecha, referencia, cuenta) se pregunta; el cobro se reparte de la venta más vieja a la más nueva; con cliente dudoso se pregunta quién pagó | `queue/receipt-completion.service.ts` |
+| Deshacer | Botón "↩️ Deshacer" 15 min tras registrar; después, **Anular** en la web | `wizard.service.ts` `undo`, `SalesService.voidPayments`, `TransactionsService.voidManual` |
+| Resúmenes | Diario 7 pm y semanal lunes 7 am por Telegram; `resumen`, `semana`, `tasa` a pedido | `assistant/digest/` |
+
+- **IA opcional.** Solo la lectura de comprobantes puede usar Claude, y solo si
+  hay `ANTHROPIC_API_KEY`. Sin clave no se intenta (`isAiFallbackAvailable`).
+- **"Pagué" no abre un gasto:** casi siempre es una compra o un beneficio ya
+  registrado, y registrarlo como gasto contaría el costo dos veces. El asistente
+  de gasto avisa si hay deudas abiertas.
+- **Fechas:** "hoy" es el día de Caracas (`startOfToday` en `shared-types`); una
+  venta vence *después* de su `dueDate`. Las columnas `@db.Date` se muestran en
+  UTC en la web (`formatDate`) para no correr un día.
+- **Moneda de cuenta:** todo movimiento se asienta en la moneda de su cuenta con
+  `treasury/account-amount.ts`; nunca bolívares en una cuenta en dólares.
+
 ## Convenciones de Código
 
 ### Nomenclatura

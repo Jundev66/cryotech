@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+:root {
+  --radius: 0.85rem;
+  --background: oklch(0.12 0.01 75);
+  --foreground: oklch(0.93 0.006 75);
+  --card: oklch(0.16 0.012 75);
+  --card-foreground: oklch(0.93 0.006 75);
+  --popover: oklch(0.16 0.012 75);
+  --popover-foreground: oklch(0.93 0.006 75);
+  --primary: oklch(0.62 0.14 175);
+  --primary-foreground: oklch(0.14 0.02 175);
+  --secondary: oklch(0.21 0.015 75);
+  --secondary-foreground: oklch(0.93 0.006 75);
+  --muted: oklch(0.21 0.015 75);
+  --muted-foreground: oklch(0.60 0.01 75);
+  --accent: oklch(0.28 0.04 75);
+  --accent-foreground: oklch(0.93 0.006 75);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 11%);
+  --ring: oklch(0.62 0.14 175);
+}
+
+/* Native Mobile Feel Optimizations */
+html, body {
+  touch-action: pan-y;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  overscroll-behavior-y: none;
+  height: 100%;
+}
+
+input, textarea {
+  user-select: text;
+}
+
+/* Touch feedback for buttons & list items */
+.touch-active {
+  transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.1s ease;
+}
+.touch-active:active {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+
+/* Safe areas */
+.safe-top {
+  padding-top: max(env(safe-area-inset-top), 16px);
+}
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 16px);
+}
+.safe-bottom-nav {
+  padding-bottom: max(env(safe-area-inset-bottom), 8px);
+}
+
+/* Hide scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

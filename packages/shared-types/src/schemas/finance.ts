@@ -38,6 +38,7 @@ export const saleSchema = z.object({
   totalAmountBs: z.coerce.number().nonnegative('Total en Bs no puede ser negativo').optional(),
   exchangeRate: z.coerce.number().positive('Tasa debe ser positiva').optional(),
   dueDate: z.string().optional(),
+  paymentStatus: z.enum(['pending', 'partial', 'paid']).optional(),
   // Without this the validation pipe strips the date the client already sends,
   // and every sale lands on today — making it impossible to record "the sale
   // from yesterday".
@@ -80,6 +81,11 @@ export const salePaymentSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const genericPaymentSchema = salePaymentSchema.extend({
+  saleId: z.string().uuid().optional(),
+  clientId: z.string().uuid().optional(),
+});
+
 export const exchangeRateConfigSchema = z.object({
   rateSource: z.enum(['bcv', 'parallel', 'custom']),
   customRate: z.coerce.number().positive('Tasa debe ser positiva').optional(),
@@ -91,4 +97,5 @@ export type SaleInput = z.infer<typeof saleSchema>;
 export type BulkSaleItemInput = z.infer<typeof bulkSaleItemSchema>;
 export type BulkSaleInput = z.infer<typeof bulkSaleSchema>;
 export type SalePaymentInput = z.infer<typeof salePaymentSchema>;
+export type GenericPaymentInput = z.infer<typeof genericPaymentSchema>;
 export type ExchangeRateConfigInput = z.infer<typeof exchangeRateConfigSchema>;

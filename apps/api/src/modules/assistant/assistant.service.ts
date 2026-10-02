@@ -1,17 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DraftService } from './drafts/draft.service';
 import { ReceiptQueueService } from './queue/receipt-queue.service';
 import { ReceiptExecutorService, type ExecuteAction } from './executors/receipt-executor.service';
 import { SummaryFormatter } from './formatting/summary.formatter';
+import { todayIn } from './formatting/number.format';
 import { MenuService } from './menu/menu.service';
 import { isMenuOperation, TEXT_SHORTCUTS } from './menu/menu.catalog';
 import { PayablesService } from '../payables/payables.service';
 import { FlowService } from './flows/flow.service';
 import { WizardService } from './wizard/wizard.service';
-import { isFlowKind, type FlowKind } from './flows/flow.catalog';
+import { isFlowKind, isOperationKind, type OperationKind } from './flows/flow.catalog';
+import { parseQuickEntry, type QuickEntry } from './quick-entry/quick-entry.parser';
+import { DigestService } from './digest/digest.service';
+import { ReceiptCompletionService } from './queue/receipt-completion.service';
 import { BUTTON, buildButtonId, parseButtonId, type OutgoingMessage } from './types/assistant.types';
 import type { PayableKind } from '../payables/payables.types';
 import { ClientResolver } from './resolvers/client.resolver';
+
+const DEFAULT_TIMEZONE = 'America/Caracas';
+
+/**
+ * How sure a typed name has to be to pick the client without asking.
+ *
+ * The same bar the receipt uses, plus a clear gap to the runner-up: "José"
+ * with two Josés on the books narrows the list rather than choosing one.
+ */
+const CONFIDENT_CLIENT_MATCH = 0.85;
+const CLIENT_MATCH_GAP = 0.15;
 
 /**
  * Openers that should never read as "I did not understand" — they carry no
@@ -37,6 +53,9 @@ export class AssistantService {
     private readonly flows: FlowService,
     private readonly wizard: WizardService,
     private readonly clientResolver: ClientResolver,
+    private readonly configService: ConfigService,
+    private readonly digest: DigestService,
+    private readonly completion: ReceiptCompletionService,
   ) {}
 
   /** Handles a submitted WhatsApp form. */
@@ -83,6 +102,28 @@ export class AssistantService {
       return this.wizard.answerText(active, text);
     }
 
+    // A receipt on screen asking for its amount or reference. Only a message
+    // that looks like the answer is taken as one; anything else falls through.
+    const completed = await this.completion.answerText(companyId, channel, externalUserId, text);
+    if (completed) return completed;
+
+    // Asked for by name: the summaries that also arrive on their own, and the rate.
+    if (normalized === 'resumen' || normalized === 'resumen de hoy' || normalized === 'hoy') {
+      return this.digest.daily(companyId);
+    }
+    if (normalized === 'semana' || normalized === 'resumen semanal') {
+      return this.digest.weekly(companyId);
+    }
+    if (normalized === 'tasa' || normalized === 'bcv' || normalized === 'dolar') {
+      return this.digest.rate(companyId);
+    }
+
+    // A one-line operation — "gasté 20$ gasoil", "cobré 100$ juan" — opens its
+    // wizard with whatever could be read already answered. It goes before the
+    // client search, which would otherwise take "juan pagó 50" for a name.
+    const quick = parseQuickEntry(text, todayIn(this.timeZone()));
+    if (quick) return this.openQuickEntry(quick, companyId, channel, externalUserId);
+
     const shortcut = TEXT_SHORTCUTS[normalized];
     if (shortcut) return this.menu.handle(shortcut, companyId, channel, externalUserId);
 
@@ -90,11 +131,23 @@ export class AssistantService {
     // menu, since that is what "Cobrar" trains people to type. Anywhere else in
     // the chat it is still a fair guess — the client list has no notion of
     // "current screen" to gate this on.
-    const matches = await this.clientResolver.searchByName(companyId, text);
+    let clientCandidate = text.trim();
+    const clientQueryMatch = text.match(
+      /^(?:cobrar(?:le)?(?:\s+(?:el\s+pollo|los\s+pollos))?(?:\s+a|\s+de)?|cuenta(?:\s+de)?|saldo(?:\s+de)?|deuda(?:\s+de)?|ventas?(?:\s+de|\s+a)?)\s+(.+)$/i,
+    );
+    if (clientQueryMatch && clientQueryMatch[1]) {
+      clientCandidate = clientQueryMatch[1].trim();
+    }
+
+    let matches = await this.clientResolver.searchByName(companyId, clientCandidate);
+    if (matches.length === 0 && clientCandidate !== text.trim()) {
+      matches = await this.clientResolver.searchByName(companyId, text.trim());
+    }
+
     if (matches.length === 1) return this.menu.clientSales(companyId, matches[0].id);
     if (matches.length > 1) {
       return {
-        text: `Encontré varios con "${text.trim()}" — ¿cuál?`,
+        text: `Encontré varios con "${clientCandidate}" — ¿cuál?`,
         buttons: matches.map((match) => ({
           id: buildButtonId(BUTTON.CLIENT_SALES, match.id),
           title: `👤 ${match.name}`,
@@ -132,12 +185,21 @@ export class AssistantService {
     }
 
     if (parsed.prefix === BUTTON.FORM) {
-      if (!isFlowKind(parsed.draftId)) return null;
-      return this.openOperation(companyId, parsed.draftId, channel, externalUserId);
+      if (!isOperationKind(parsed.draftId)) return null;
+      // `fm:collect:<clientId>` or `fm:sale:<clientId>` opens the operation already on that client.
+      const prefill: Record<string, string> =
+        (parsed.draftId === 'collect' || parsed.draftId === 'sale') && parsed.extra
+          ? { client: parsed.extra }
+          : {};
+      return this.openOperation(companyId, parsed.draftId, channel, externalUserId, prefill);
     }
 
     if (parsed.prefix === BUTTON.WIZARD) {
       return this.wizard.answerButton(parsed.draftId, parsed.extra ?? '');
+    }
+
+    if (parsed.prefix === BUTTON.UNDO) {
+      return this.wizard.undo(companyId, parsed.draftId);
     }
 
     if (parsed.prefix === BUTTON.BATCH_PICK) {
@@ -179,7 +241,21 @@ export class AssistantService {
       return this.formatter.categoryPicker(parsed.draftId);
     }
 
-    const action = this.toAction(parsed.prefix, parsed.extra);
+    // A field the reader could not see, answered with a tap.
+    if (parsed.prefix === BUTTON.RECEIPT_FIELD) {
+      return this.completion.answerButton(companyId, parsed.draftId, parsed.extra ?? '');
+    }
+
+    // "Cobro de venta" on a receipt whose payer is not certain: ask who first.
+    if (parsed.prefix === BUTTON.CLIENT_PICK) {
+      return this.completion.clientChoices(companyId, parsed.draftId);
+    }
+
+    // A client picked from that list travels in the button.
+    const action: ExecuteAction | null =
+      parsed.prefix === BUTTON.SALE_PAYMENT && parsed.extra
+        ? { kind: 'sale_payment', clientId: parsed.extra }
+        : this.toAction(parsed.prefix, parsed.extra);
     if (!action) return null;
 
     // Atomic pending -> confirmed. A second tap finds nothing to claim, which
@@ -211,14 +287,55 @@ export class AssistantService {
    */
   async openOperation(
     companyId: string,
-    kind: FlowKind,
+    kind: OperationKind,
+    channel: string,
+    externalUserId: string,
+    prefill: Record<string, string> = {},
+  ): Promise<OutgoingMessage> {
+    if (isFlowKind(kind) && this.flows.isAvailable(kind)) {
+      return this.flows.open(companyId, kind, channel, externalUserId);
+    }
+    return this.wizard.start(companyId, kind, channel, externalUserId, prefill);
+  }
+
+  /**
+   * Opens the wizard a typed sentence asked for, with what it said filled in.
+   *
+   * A client name is only pinned when it clearly means one person. Otherwise it
+   * narrows the list, and the tap stays with the user: "José" with two Josés on
+   * the books must never charge the wrong one.
+   */
+  private async openQuickEntry(
+    entry: QuickEntry,
+    companyId: string,
     channel: string,
     externalUserId: string,
   ): Promise<OutgoingMessage> {
-    if (this.flows.isAvailable(kind)) {
-      return this.flows.open(companyId, kind, channel, externalUserId);
+    if (entry.kind === 'entry') {
+      const reply = await this.openOperation(companyId, 'entry', channel, externalUserId);
+      return {
+        ...reply,
+        text: `_El alimento y los pollitos se registran como compra, así entran al inventario._\n\n${reply.text}`,
+      };
     }
-    return this.wizard.start(companyId, kind, channel, externalUserId);
+
+    const prefill: Record<string, string> = { ...entry.seed };
+
+    if ((entry.kind === 'collect' || entry.kind === 'sale') && entry.clientName) {
+      const [best, runnerUp] = await this.clientResolver.searchByName(companyId, entry.clientName);
+      const clear =
+        best &&
+        best.score >= CONFIDENT_CLIENT_MATCH &&
+        (!runnerUp || best.score - runnerUp.score >= CLIENT_MATCH_GAP);
+      if (clear) prefill.client = best.id;
+      else prefill.__filter = entry.clientName;
+    }
+
+    return this.wizard.start(companyId, entry.kind, channel, externalUserId, prefill);
+  }
+
+  private timeZone(): string {
+    return this.configService.get<string>('ASSISTANT_TIMEZONE') ?? DEFAULT_TIMEZONE;
   }
 
   private async showPayablePicker(

@@ -41,6 +41,23 @@ const AMOUNT_MATCH_TOLERANCE = 0.5;
  */
 const JUST_REGISTERED_MS = 30 * 60_000;
 
+/** How many days back the date question offers, today included. */
+const DATE_CHOICES = 7;
+
+/** An account the user can say the money went through. */
+export interface AccountChoice {
+  id: string;
+  name: string;
+  currency: string;
+}
+
+/** A client a payment can be applied to, with why they are on the list. */
+export interface ClientChoice {
+  id: string;
+  name: string;
+  note?: string;
+}
+
 @Injectable()
 export class SummaryFormatter {
   /**
@@ -57,6 +74,8 @@ export class SummaryFormatter {
     position?: { index: number; total: number },
     /** What the business currently owes, so an outgoing payment can name it. */
     openPayables: OpenPayable[] = [],
+    /** The company's accounts, for when the receipt's could not be recognised. */
+    accounts: AccountChoice[] = [],
   ): OutgoingMessage {
     const { fields, direction } = receipt;
 
@@ -69,6 +88,12 @@ export class SummaryFormatter {
           `Registrada el ${receipt.duplicateOf.movementDate.toISOString().slice(0, 10)}.\n\n` +
           `No registré nada nuevo.`,
       };
+    }
+
+    // Something the reader could not see is asked before anything is offered:
+    // the choices below need the amount, the date and the account to mean anything.
+    if (receipt.awaiting && receipt.awaiting.length > 0) {
+      return this.askMissing(receipt, draftId, todayIso, position, accounts);
     }
 
     const lines: string[] = [];
@@ -101,7 +126,7 @@ export class SummaryFormatter {
 
     for (const warning of receipt.warnings) lines.push(`⚠️ ${warning}`);
 
-    if (receipt.missing.length > 0) {
+    if (receipt.missing.length > 0 && !receipt.awaiting) {
       lines.push('');
       lines.push(`No pude leer: ${receipt.missing.map(fieldLabel).join(', ')}.`);
       return { text: lines.join('\n') };
@@ -110,11 +135,20 @@ export class SummaryFormatter {
     lines.push('');
 
     if (direction.direction === 'in') {
+      // Without a sure match the payer is asked for first. Guessing used to
+      // create a brand-new client from however the bank spelled the name.
+      const confident = receipt.client?.confident ?? true;
       lines.push('¿A qué corresponde?');
       return {
         text: lines.join('\n'),
         buttons: [
-          { id: buildButtonId(BUTTON.SALE_PAYMENT, draftId), title: '💰 Cobro de venta' },
+          confident
+            ? { id: buildButtonId(BUTTON.SALE_PAYMENT, draftId), title: '💰 Cobro de venta' }
+            : {
+                id: buildButtonId(BUTTON.CLIENT_PICK, draftId),
+                title: '💰 Cobro de venta',
+                description: 'Te pregunto de qué cliente',
+              },
           { id: buildButtonId(BUTTON.CATEGORY, draftId, 'capital_in'), title: '🏦 Aporte de capital' },
           { id: buildButtonId(BUTTON.CATEGORY, draftId, 'other'), title: '🧾 Otro ingreso' },
           { id: buildButtonId(BUTTON.CANCEL, draftId), title: '✖️ Descartar' },
@@ -143,6 +177,135 @@ export class SummaryFormatter {
 
     lines.push('Agrega la cuenta en Tesorería y vuelve a enviar el comprobante.');
     return { text: lines.join('\n') };
+  }
+
+  /**
+   * Asks for the first thing the reader could not see.
+   *
+   * One question at a time, with what was read shown above it, so the user can
+   * see the receipt is the right one before answering. Only the amount and the
+   * reference are typed; the date, the direction and the account are tapped.
+   */
+  private askMissing(
+    receipt: ResolvedReceipt,
+    draftId: string,
+    todayIso: string,
+    position: { index: number; total: number } | undefined,
+    accounts: AccountChoice[],
+  ): OutgoingMessage {
+    const { fields, direction } = receipt;
+    const field = receipt.awaiting![0];
+    const answer = (value: string) => buildButtonId(BUTTON.RECEIPT_FIELD, draftId, value);
+    const discard: ReplyButton = { id: buildButtonId(BUTTON.CANCEL, draftId), title: '✖️ Descartar' };
+
+    const lines: string[] = [];
+    if (position && position.total > 1) {
+      lines.push(`_Comprobante ${position.index} de ${position.total}_`);
+    }
+    lines.push(`📄 *COMPROBANTE* · ${fields.bankName ?? 'Banco'}`);
+    if (direction.ourAccountName) {
+      lines.push(`${direction.direction === 'out' ? 'Desde' : 'En'} ${direction.ourAccountName}`);
+    }
+    if (fields.counterparty) lines.push(fields.counterparty);
+    lines.push(fields.amount === null ? 'Monto: ?' : this.amountLine(receipt));
+    lines.push(
+      `${fields.date ? formatReceiptDate(fields.date, todayIso) : 'Fecha: ?'} · Ref ${fields.reference ?? '?'}`,
+    );
+    lines.push('');
+
+    switch (field) {
+      case 'amount':
+        lines.push('No pude leer el *monto*. Escríbelo como sale en la captura.');
+        lines.push('_Por ejemplo 1.250,50 o 20$_');
+        return { text: lines.join('\n'), buttons: [discard] };
+
+      case 'date': {
+        lines.push('No pude leer la *fecha*. ¿De qué día es?');
+        const days = Array.from({ length: DATE_CHOICES }, (_, offset) => shiftDays(todayIso, -offset));
+        return {
+          text: lines.join('\n'),
+          buttons: [
+            ...days.map((day) => ({ id: answer(`date=${day}`), title: dayTitle(day, todayIso) })),
+            discard,
+          ],
+        };
+      }
+
+      case 'reference':
+        lines.push('No pude leer la *referencia*. Escríbela; con los últimos 6 dígitos basta.');
+        lines.push('_Es lo que evita que la misma captura se registre dos veces._');
+        return {
+          text: lines.join('\n'),
+          buttons: [{ id: answer('reference=none'), title: '⏭️ No tiene referencia' }, discard],
+        };
+
+      case 'direction':
+        lines.push('No reconocí tus cuentas en la captura. ¿Este dinero entró o salió?');
+        return {
+          text: lines.join('\n'),
+          buttons: [
+            { id: answer('direction=in'), title: '💰 Me pagaron', description: 'Entró a una cuenta tuya' },
+            { id: answer('direction=out'), title: '💸 Pagué yo', description: 'Salió de una cuenta tuya' },
+            discard,
+          ],
+        };
+
+      case 'account':
+        if (accounts.length === 0) {
+          lines.push('No tienes cuentas en Tesorería. Agrega una en la web y vuelve a mandar la captura.');
+          return { text: lines.join('\n'), buttons: [discard] };
+        }
+        lines.push(direction.direction === 'out' ? '¿De qué cuenta salió?' : '¿A qué cuenta entró?');
+        lines.push(
+          '_Si guardas en Tesorería los últimos 4 dígitos o el teléfono de esa cuenta, la próxima vez la reconozco sola._',
+        );
+        return {
+          text: lines.join('\n'),
+          buttons: [
+            ...accounts.slice(0, 8).map((account) => ({
+              id: answer(`account=${account.id}`),
+              title: account.name,
+              description: account.currency === 'USD' ? 'Dólares' : 'Bolívares',
+            })),
+            discard,
+          ],
+        };
+    }
+  }
+
+  /**
+   * Who paid, when the name on the receipt did not settle it.
+   *
+   * Only clients who owe something are offered: a payment has to land on an
+   * open sale, and a client without one would only fail at the last tap.
+   */
+  clientPicker(draftId: string, clients: ClientChoice[], nameOnReceipt: string | null): OutgoingMessage {
+    const discard: ReplyButton = { id: buildButtonId(BUTTON.CANCEL, draftId), title: '✖️ Descartar' };
+
+    if (clients.length === 0) {
+      return {
+        text:
+          'Nadie tiene ventas pendientes, así que no hay a qué aplicar este cobro.\n\n' +
+          'Registra primero la venta, o toca otra opción del comprobante.',
+        buttons: [discard],
+      };
+    }
+
+    const lines = ['¿Quién te pagó?'];
+    if (nameOnReceipt) lines.push(`_En la captura dice: ${nameOnReceipt}_`);
+    lines.push('', '_Se aplica a sus ventas pendientes, de la más vieja a la más nueva._');
+
+    return {
+      text: lines.join('\n'),
+      buttons: [
+        ...clients.slice(0, 9).map((client) => ({
+          id: buildButtonId(BUTTON.SALE_PAYMENT, draftId, client.id),
+          title: `👤 ${client.name}`,
+          description: client.note,
+        })),
+        discard,
+      ],
+    };
   }
 
   /**
@@ -314,4 +477,19 @@ function fieldLabel(field: string): string {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function shiftDays(iso: string, days: number): string {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+const WEEKDAYS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+
+function dayTitle(iso: string, todayIso: string): string {
+  const [, month, day] = iso.split('-');
+  if (iso === todayIso) return `Hoy · ${day}/${month}`;
+  if (iso === shiftDays(todayIso, -1)) return `Ayer · ${day}/${month}`;
+  return `${WEEKDAYS[new Date(`${iso}T12:00:00Z`).getUTCDay()]} ${day}/${month}`;
 }

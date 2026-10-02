@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SequenceService } from '../../common/services/sequence.service';
 import { textSearchWhere } from '../../common/search/search.util';
@@ -95,11 +95,27 @@ export class ClientsService {
     });
   }
 
+  /**
+   * Deletes a client who owes nothing.
+   *
+   * Sales keep a nullable link to their client, so deleting one who still owed
+   * used to succeed and turn their debt into "Sin cliente" — invisible to the
+   * bot's collection and to their statement, which is the same as forgetting it.
+   */
   async remove(companyId: string, clientId: string) {
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, companyId },
     });
     if (!client) throw new NotFoundException('Client not found');
+
+    const owing = await this.prisma.sale.count({
+      where: { companyId, clientId, paymentStatus: { in: ['pending', 'partial'] } },
+    });
+    if (owing > 0) {
+      throw new ConflictException(
+        `${client.name} tiene ${owing} venta${owing === 1 ? '' : 's'} sin cobrar. Cóbralas o anúlalas antes de borrarlo.`,
+      );
+    }
 
     await this.prisma.client.delete({ where: { id: clientId } });
     return { success: true };

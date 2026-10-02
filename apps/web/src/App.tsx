@@ -31,6 +31,7 @@ const EntriesPage = lazy(() => import('@/pages/entries'));
 const TreasuryPage = lazy(() => import('@/pages/treasury'));
 const ProcessingPage = lazy(() => import('@/pages/processing'));
 const ConsumptionsPage = lazy(() => import('@/pages/consumptions'));
+const LandingPage = lazy(() => import('@/pages/landing'));
 
 function AuthLayout() {
   const { user, loading } = useAuth();
@@ -178,9 +179,29 @@ function LoadingScreen() {
   );
 }
 
+function HomeRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <LandingPage />
+    </Suspense>
+  );
+}
+
 export function App() {
   return (
     <Routes>
+      <Route path="/" element={<HomeRoute />} />
+      <Route
+        path="/landing"
+        element={
+          <Suspense fallback={<LoadingScreen />}>
+            <LandingPage />
+          </Suspense>
+        }
+      />
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

@@ -10,7 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Sparkles } from 'lucide-react';
 import { Logo } from '@/components/brand/logo';
 import { apiMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
@@ -20,6 +20,7 @@ export default function LoginPage() {
   const { setUser } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
@@ -41,6 +42,27 @@ export default function LoginPage() {
       setError(message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onDemoSubmit() {
+    setError('');
+    setDemoLoading(true);
+    try {
+      const data = await authApi.createDemoSession();
+      localStorage.setItem('cryotech_access_token', data.accessToken);
+      localStorage.setItem('cryotech_refresh_token', data.refreshToken);
+      if (data.company?.id) {
+        localStorage.setItem('cryotech_company_id', data.company.id);
+      }
+      setUser(data.user);
+      toast.success(`Entrando a ${data.company?.name || 'demostración'}`);
+      navigate('/dashboard');
+    } catch (err: unknown) {
+      const message = apiMessage(err, 'Error al iniciar la demostración');
+      setError(message);
+    } finally {
+      setDemoLoading(false);
     }
   }
 
@@ -90,12 +112,37 @@ export default function LoginPage() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="h-11 w-full" disabled={loading}>
+            <Button type="submit" className="h-11 w-full" disabled={loading || demoLoading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Iniciar sesion
             </Button>
           </form>
         </Form>
+
+        <div className="relative my-5">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-border/60" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">O prueba el sistema</span>
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 w-full border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary font-medium transition-colors"
+          onClick={onDemoSubmit}
+          disabled={loading || demoLoading}
+        >
+          {demoLoading ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Sparkles className="mr-2 h-4 w-4 text-primary" />
+          )}
+          Probar Demostración (Datos de Ejemplo)
+        </Button>
+
         <p className="mt-5 text-center text-sm text-muted-foreground">
           No tienes cuenta?{' '}
           <Link to="/register" className="font-medium text-primary hover:text-primary/80 transition-colors">

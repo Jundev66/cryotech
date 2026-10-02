@@ -47,6 +47,24 @@ export function isFlowKind(value: string): value is FlowKind {
 }
 
 /**
+ * Operations that only exist as the step-by-step wizard.
+ *
+ * They have no WhatsApp form behind them, so they stay out of `FLOWS`: that
+ * table is checked against `services/whatsapp-flows/flows/*.json`, and a row
+ * with no file would fail the check for a form nobody means to publish.
+ */
+export const WIZARD_ONLY_KINDS = ['expense', 'collect'] as const;
+
+export type WizardOnlyKind = (typeof WIZARD_ONLY_KINDS)[number];
+
+/** Everything the wizard can open: the forms plus the wizard-only operations. */
+export type OperationKind = FlowKind | WizardOnlyKind;
+
+export function isOperationKind(value: string): value is OperationKind {
+  return isFlowKind(value) || (WIZARD_ONLY_KINDS as readonly string[]).includes(value);
+}
+
+/**
  * How far back a form's calendar may reach.
  *
  * Wide enough to record something forgotten from last month, narrow enough that
@@ -54,10 +72,12 @@ export function isFlowKind(value: string): value is FlowKind {
  */
 export const CALENDAR_PAST_DAYS = 60;
 /** Only a planned batch may be dated forward; everything else happened already. */
-export const CALENDAR_FUTURE_DAYS: Record<FlowKind, number> = {
+export const CALENDAR_FUTURE_DAYS: Record<OperationKind, number> = {
   sale: 0,
   daily_log: 0,
   processing: 0,
   batch_plan: 90,
   entry: 0,
+  expense: 0,
+  collect: 0,
 };

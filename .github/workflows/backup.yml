@@ -1,4 +1,5 @@
-# Daily backup of the production database to Cloudflare R2.
+# Daily backup of the production database: to Cloudflare R2 when it is set up,
+# otherwise as an Actions artifact of this (private) repository.
 #
 # It lives here and not in the Worker for a concrete reason: a Worker cannot run
 # `pg_dump`, so backing up from there would mean reimplementing the dump by
@@ -10,16 +11,19 @@
 # so the container version is not a detail: it has to follow Neon's when that
 # goes up.
 #
-# It uploads with wrangler rather than the S3 API on purpose: that reuses the
+# R2 uploads with wrangler rather than the S3 API on purpose: that reuses the
 # CLOUDFLARE_API_TOKEN the project already had for deploying the Worker instead
-# of demanding a separate set of S3 keys to create, store and rotate.
+# of demanding a separate set of S3 keys to create, store and rotate. Its
+# retention is a lifecycle rule on the bucket ('retencion-14-dias').
 #
-# Retention is NOT managed here. The bucket carries a lifecycle rule
-# ('retencion-14-dias') that expires objects after 14 days, so a failed run
-# neither stops the cleanup nor piles anything up.
+# R2 asks for a payment method even on its free tier. Without it the dump is kept
+# as an artifact for 14 days — but only if the repository is private, checked on
+# every run: on a public repository anyone can download Actions artifacts, and
+# that would publish the whole database.
 #
 # Required secrets (Settings → Secrets → Actions):
 #   DATABASE_URL            Neon connection string
+# Optional, for R2:
 #   CLOUDFLARE_API_TOKEN    the same one that deploys the Worker
 #   CLOUDFLARE_ACCOUNT_ID
 
@@ -36,9 +40,13 @@ concurrency:
   group: backup
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   backup:
-    name: Dump to R2
+    name: Dump the database
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -51,15 +59,27 @@ jobs:
       # A clone without the secrets configured cannot back anything up, and a
       # workflow failing every night over that leaves the repository permanently
       # red for something that is not broken. Skip, and say why.
-      - name: Are the secrets there?
+      - name: What is there to back up to?
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "${{ secrets.DATABASE_URL }}" ] || [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No DATABASE_URL or CLOUDFLARE_API_TOKEN; nothing to back up."
+            echo "::notice::No DATABASE_URL; nothing to back up."
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
+
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "r2=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "r2=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Asked of the API rather than read from the event: a scheduled run
+          # carries no repository payload to read it from.
+          echo "private=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)" >> "$GITHUB_OUTPUT"
 
       - name: Dump the database
         if: steps.check.outputs.ready == 'true'
@@ -92,16 +112,24 @@ jobs:
           fi
 
       - name: Upload to R2
-        if: steps.check.outputs.ready == 'true'
+        if: steps.check.outputs.ready == 'true' && steps.check.outputs.r2 == 'true'
         run: |
           name="cryotech-$(date -u +%Y-%m-%d).dump"
           npx --yes wrangler@4 r2 object put "${BUCKET}/${name}" \
             --file=backup.dump --remote
           echo "uploaded: ${name}"
 
-      # There used to be an `upload-artifact` here keeping a second copy of the
-      # dump, as a net in case the problem was R2 or its token. On a public
-      # repository anyone can download Actions artifacts, so that net published
-      # the whole database — sales, clients, treasury, users and their hashes —
-      # for the 14 days of retention. R2 is the real destination of the backup;
-      # the extra copy cost far more than it covered.
+      - name: Keep as artifact (private repository only)
+        if: steps.check.outputs.ready == 'true' && steps.check.outputs.r2 != 'true' && steps.check.outputs.private == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cryotech-db-${{ github.run_id }}
+          path: backup.dump
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Refuse to publish the database
+        if: steps.check.outputs.ready == 'true' && steps.check.outputs.r2 != 'true' && steps.check.outputs.private != 'true'
+        run: |
+          echo "::error::No R2 configured and the repository is not private: the dump was not uploaded anywhere."
+          exit 1

@@ -1,0 +1,27 @@
+{
+  "appId": "com.cryotech.mobile",
+  "appName": "CryoTech",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0f172a"
+    },
+    "Keyboard": {
+      "resize": "body",
+      "style": "DARK",
+      "resizeOnFullScreen": true
+    },
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  },
+  "android": {
+    "backgroundColor": "#0f172a",
+    "allowMixedContent": true
+  }
+}

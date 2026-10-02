@@ -244,6 +244,22 @@ PostgreSQL por Prisma con un único rol de base de datos.
   el único aislamiento que existe, así que omitirlo es una fuga, no un descuido
 - Nunca tomar el `companyId` del cuerpo de la petición
 
+### Tenants Oficiales / Conocidos (Regla IA)
+
+La base de datos mantiene únicamente dos tenants permanentes:
+
+| Tenant | Propósito | Regla de Oro |
+|---|---|---|
+| **Granja Mata** (`088ca19e-32a1-44b6-a778-57b5aef6d83b`) | **Producción Real** (Dueño: `juan@cryotech.com`) | **INTOCABLE**. Ningún script de test o limpieza puede borrar ni modificar datos aquí salvo operaciones reales ordenadas por el usuario. |
+| **ZZ Empresa de Pruebas** (`25aacb04-877b-4db0-a9dc-e3f8eb95675d`) | **Pruebas / E2E Única** (Dueño: `zz-pruebas@cryotech.test`) | Tenant dedicado exclusivo para pruebas de desarrollo y suites E2E fijas. |
+
+### Tenants Efímeros (Modo Demo)
+
+- Creados al vuelo vía `POST /api/auth/demo` con nombre `Granja Demo #XXXX`.
+- Llevan `is_demo = true` y `expires_at = NOW() + 2 hours`.
+- Poseen límite de 10 mutaciones/transacciones y permisos restringidos (sin gestión de usuarios).
+- Son purgados automáticamente por el cron job de NestJS (`DELETE FROM companies WHERE is_demo = true AND expires_at < NOW()`).
+
 ## Seguridad
 
 > Auditoría completa: 2026-08-09. Lo de abajo describe lo que hay implementado,

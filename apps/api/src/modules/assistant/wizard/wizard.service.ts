@@ -8,7 +8,7 @@ import { FlowSessionService } from '../flows/flow-session.service';
 import { formatBs, parseLocalNumber, todayIn } from '../formatting/number.format';
 import { normalize, rankByName } from '../../../common/search/fuzzy.util';
 import { BUTTON, buildButtonId, type OutgoingMessage, type ReplyButton } from '../types/assistant.types';
-import { CALENDAR_PAST_DAYS, type FlowKind } from '../flows/flow.catalog';
+import { CALENDAR_PAST_DAYS, type OperationKind } from '../flows/flow.catalog';
 import { WIZARDS, visibleSteps, type WizardStep } from './wizard.catalog';
 
 const DEFAULT_TIMEZONE = 'America/Caracas';
@@ -26,6 +26,8 @@ const RUN_KEY = '__run';
 const PAGE_KEY = '__page';
 /** What was typed to narrow a long list. Reserved for the same reason. */
 const FILTER_KEY = '__filter';
+/** How long "Deshacer" works after registering: long enough to notice a wrong tap. */
+const UNDO_WINDOW_MS = 15 * 60_000;
 /**
  * How close a name has to be when nothing contains what was typed.
  *
@@ -51,6 +53,34 @@ interface Option {
   title: string;
   description?: string;
 }
+
+export const NUMBER_WORDS: Record<string, number> = {
+  cero: 0,
+  ninguno: 0,
+  ninguna: 0,
+  ningun: 0,
+  nada: 0,
+  'sin bajas': 0,
+  'sin novedad': 0,
+  un: 1,
+  uno: 1,
+  una: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10,
+  once: 11,
+  doce: 12,
+  trece: 13,
+  catorce: 14,
+  quince: 15,
+  veinte: 20,
+};
 
 type Row = Record<string, string>;
 
@@ -79,7 +109,7 @@ interface Repeatable {
   question: (count: number) => string;
 }
 
-const REPEATABLE: Partial<Record<FlowKind, Repeatable>> = {
+const REPEATABLE: Partial<Record<OperationKind, Repeatable>> = {
   sale: {
     keys: ['client', 'quantity', 'weight_kg'],
     bucket: 'cart',
@@ -147,9 +177,11 @@ export class WizardService {
    */
   async start(
     companyId: string,
-    kind: FlowKind,
+    kind: OperationKind,
     channel: string,
     externalUserId: string,
+    /** Answers already known from elsewhere — a typed sentence, a tapped client. */
+    prefill: Record<string, string> = {},
   ): Promise<OutgoingMessage> {
     const payload = await this.data.build(companyId, kind);
     if (payload.blocked) return { text: payload.blocked };
@@ -161,7 +193,13 @@ export class WizardService {
 
     // A question whose answer is already known is not asked: the wizard always
     // walks to the first key nobody has answered, so seeding one skips it.
-    const seeded = payload.seedAnswers ?? {};
+    //
+    // The builder's own seeds are trusted as they are — an empty chick product
+    // is how "there is none" is said. Only what came from outside is checked.
+    const seeded = {
+      ...(payload.seedAnswers ?? {}),
+      ...this.acceptPrefill(kind, payload.context, prefill),
+    };
 
     const steps = visibleSteps(kind, seeded);
     const answered = new Set(Object.keys(seeded));
@@ -178,7 +216,65 @@ export class WizardService {
       step: first,
     });
 
-    return this.render(session, seeded, first, `*${WIZARDS[kind].title}*`);
+    const header = `*${WIZARDS[kind].title}*`;
+    return this.render(session, seeded, first, payload.notice ? `${header}\n\n${payload.notice}` : header);
+  }
+
+  /**
+   * Keeps only the prefilled answers the wizard would itself have accepted.
+   *
+   * A sentence typed in the chat, or a button from another screen, can name a
+   * client who no longer owes or a date outside the calendar. Dropping those
+   * means the question is simply asked, instead of the session carrying a value
+   * the executor rejects at the very last tap.
+   */
+  private acceptPrefill(
+    kind: OperationKind,
+    context: Record<string, unknown>,
+    prefill: Record<string, string>,
+  ): Record<string, string> {
+    const accepted: Record<string, string> = {};
+
+    // In step order, so a list that depends on an earlier answer — the
+    // accounts for the currency, the sales for the client — is checked against it.
+    for (const step of WIZARDS[kind].steps) {
+      const raw = prefill[step.key];
+      if (raw === undefined || step.skipIf?.(accepted)) continue;
+      if (this.acceptsPrefilled(step, context, accepted, raw)) accepted[step.key] = raw;
+    }
+
+    // A name that could not be pinned to one client still narrows the list.
+    if (prefill[FILTER_KEY]) accepted[FILTER_KEY] = prefill[FILTER_KEY];
+    return accepted;
+  }
+
+  private acceptsPrefilled(
+    step: WizardStep,
+    context: Record<string, unknown>,
+    answers: Record<string, string>,
+    raw: string,
+  ): boolean {
+    const value = raw.trim();
+    if (value === '') return false;
+
+    switch (step.kind) {
+      case 'choice': {
+        if (step.fixedOptions) return step.fixedOptions.some((option) => option.id === value);
+        if (!step.optionsKey) return false;
+        const key = typeof step.optionsKey === 'function' ? step.optionsKey(answers) : step.optionsKey;
+        const options = context[key];
+        return Array.isArray(options) && (options as Option[]).some((option) => option.id === value);
+      }
+      case 'date':
+        return this.dateOptions(step).some((option) => option.id === value);
+      case 'number': {
+        const clean = value.trim().toLowerCase();
+        const number = NUMBER_WORDS[clean] ?? parseLocalNumber(value);
+        return number !== null && number >= 0;
+      }
+      case 'text':
+        return true;
+    }
   }
 
   /** The operation this user is in the middle of, if any. */
@@ -209,7 +305,7 @@ export class WizardService {
     raw: string,
     fromButton: boolean,
   ): Promise<OutgoingMessage | null> {
-    const kind = session.flowKind as FlowKind;
+    const kind = session.flowKind as OperationKind;
     const answers = (session.answers ?? {}) as Record<string, string>;
 
     if (raw === CANCEL) {
@@ -324,9 +420,31 @@ export class WizardService {
     }
 
     if (step.kind === 'number') {
-      const value = parseLocalNumber(raw);
+      const clean = raw.trim().toLowerCase();
+      let value: number | null = NUMBER_WORDS[clean] ?? null;
+      if (value === null) {
+        value = parseLocalNumber(raw);
+      }
       if (value === null) return { error: `No entendí "${raw}". Escribe solo el número.` };
       if (value < 0) return { error: 'No puede ser negativo.' };
+
+      // Decimal correction for scale weights and unit prices:
+      // If scale displayed 2.700 or user typed 2.700 (with exactly 3 decimals and dot),
+      // parseLocalNumber treats '.' as thousands separator yielding 2700.
+      const digitsOnly = raw.trim().replace(/[^\d.]/g, '');
+      if (
+        (step.key === 'weight_kg' || step.key === 'feed_consumed_kg' || step.key === 'price_per_kg') &&
+        value >= 1000 &&
+        /^\d+\.\d{3}$/.test(digitsOnly)
+      ) {
+        value = value / 1000;
+      }
+
+      // If user entered kilograms for bird average weight (e.g. 2.4 kg instead of 2400 g)
+      if (step.key === 'average_weight_g' && value > 0 && value < 20) {
+        value = Math.round(value * 1000);
+      }
+
       return { value: String(value) };
     }
 
@@ -345,7 +463,7 @@ export class WizardService {
     // answered. Carrying them over would open the next list on page three,
     // filtered by a name that means nothing to it.
     const next = { ...answers, [key]: value, [PAGE_KEY]: '0', [FILTER_KEY]: '' };
-    const kind = session.flowKind as FlowKind;
+    const kind = session.flowKind as OperationKind;
 
     // Recomputed against the new answers: answering "yo mismo" on a processing
     // removes the two questions about who to pay and how much.
@@ -374,7 +492,7 @@ export class WizardService {
     index: number,
     note: string,
   ): OutgoingMessage {
-    const kind = session.flowKind as FlowKind;
+    const kind = session.flowKind as OperationKind;
     const steps = visibleSteps(kind, answers);
     const step = steps[index];
     if (!step) return this.confirmation(session, answers);
@@ -441,7 +559,7 @@ export class WizardService {
 
   /** Everything answered, laid out to read before it is written down. */
   private confirmation(session: BotFlowSession, answers: Record<string, string>): OutgoingMessage {
-    const kind = session.flowKind as FlowKind;
+    const kind = session.flowKind as OperationKind;
     const repeat = REPEATABLE[kind];
     const repeating = Boolean(repeat && (repeat.enabled?.(answers) ?? true));
     const parked = repeating ? this.rowsOf(session) : [];
@@ -509,7 +627,31 @@ export class WizardService {
     try {
       const result = await this.submissions.execute(claimed, answers);
       await this.sessions.markExecuted(claimed.id, result.resultType, result.resultId);
-      return result.reply;
+      if (!result.undo) return result.reply;
+
+      // Kept on the session, so the button only carries the token and the undo
+      // can check it is still this operation, still recent and still done.
+      await this.prisma.botFlowSession.update({
+        where: { id: claimed.id },
+        data: {
+          context: {
+            ...((claimed.context ?? {}) as Record<string, unknown>),
+            undo: result.undo,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return {
+        ...result.reply,
+        buttons: [
+          ...(result.reply.buttons ?? []),
+          {
+            id: buildButtonId(BUTTON.UNDO, claimed.flowToken),
+            title: '↩️ Deshacer',
+            description: 'Si me equivoqué, durante 15 minutos',
+          },
+        ],
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error desconocido';
       this.logger.error(`Wizard ${session.flowKind} failed: ${message}`);
@@ -522,6 +664,48 @@ export class WizardService {
       // leaves the run stranded with its answers intact and no way back in.
       const back = this.confirmation(claimed, answers);
       return { ...back, text: `⚠️ No pude registrarlo: ${message}\n\n${back.text}` };
+    }
+  }
+
+  /**
+   * Takes back what this wizard just registered, from the button on its reply.
+   *
+   * Same company only, only an operation still marked done, and only for a
+   * short while: after that the reply has scrolled away, and the web — where
+   * the record can be looked at before annulling it — is the place to do it.
+   * The status flips first, so a double tap cannot undo twice.
+   */
+  async undo(companyId: string, flowToken: string): Promise<OutgoingMessage | null> {
+    const session = await this.prisma.botFlowSession.findUnique({ where: { flowToken } });
+    if (!session || session.companyId !== companyId) return null;
+    if (session.status === 'undone') return { text: 'Eso ya lo deshice.' };
+
+    const context = (session.context ?? {}) as Record<string, unknown>;
+    const plan = context.undo as { transactionIds?: string[]; paymentIds?: string[] } | undefined;
+    if (session.status !== 'executed' || !plan) return null;
+
+    const doneAt = session.consumedAt ?? session.createdAt;
+    if (Date.now() - doneAt.getTime() > UNDO_WINDOW_MS) {
+      return {
+        text:
+          'Ya pasaron más de 15 minutos, así que no lo deshago desde aquí.\n' +
+          'Anúlalo en la web: Finanzas o Ventas → Anular.',
+      };
+    }
+
+    const { count } = await this.prisma.botFlowSession.updateMany({
+      where: { id: session.id, status: 'executed' },
+      data: { status: 'undone' },
+    });
+    if (count === 0) return { text: 'Eso ya lo deshice.' };
+
+    try {
+      return { text: await this.submissions.undo(companyId, plan) };
+    } catch (error) {
+      await this.prisma.botFlowSession.update({ where: { id: session.id }, data: { status: 'executed' } });
+      const message = error instanceof Error ? error.message : 'Error desconocido';
+      this.logger.error(`Undo of ${session.flowKind} failed: ${message}`);
+      return { text: `⚠️ No pude deshacerlo: ${message}` };
     }
   }
 
@@ -577,7 +761,7 @@ export class WizardService {
     session: BotFlowSession,
     answers: Record<string, string>,
   ): Promise<OutgoingMessage> {
-    const kind = session.flowKind as FlowKind;
+    const kind = session.flowKind as OperationKind;
     const repeat = REPEATABLE[kind];
     if (!repeat) return this.confirmation(session, answers);
 
@@ -608,7 +792,7 @@ export class WizardService {
 
   /** The rows already parked for this operation, if it is one that repeats. */
   private rowsOf(session: BotFlowSession): Row[] {
-    const repeat = REPEATABLE[session.flowKind as FlowKind];
+    const repeat = REPEATABLE[session.flowKind as OperationKind];
     if (!repeat) return [];
     const context = (session.context ?? {}) as Record<string, unknown>;
     const rows = context[repeat.bucket];

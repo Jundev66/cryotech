@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ExchangeRatesService } from '../../exchange-rates/exchange-rates.service';
+import { PayablesService } from '../../payables/payables.service';
 import { ProcessedStockService } from '../../../common/services/processed-stock.service';
 import { CHICKS_CATEGORY_SLUG } from '../../../common/constants/category-mapping';
-import { formatAmount, formatUsd, todayIn } from '../formatting/number.format';
-import { CALENDAR_FUTURE_DAYS, CALENDAR_PAST_DAYS, type FlowKind } from './flow.catalog';
+import { formatAmount, formatBs, formatUsd, todayIn } from '../formatting/number.format';
+import { CALENDAR_FUTURE_DAYS, CALENDAR_PAST_DAYS, type OperationKind } from './flow.catalog';
 
 const DEFAULT_TIMEZONE = 'America/Caracas';
 /** WhatsApp caps a Dropdown at 200 rows; well under it keeps the form usable. */
@@ -43,6 +44,8 @@ export interface FlowPayload {
   seedAnswers?: Record<string, string>;
   /** Set when the form cannot be opened at all, e.g. no active batches. */
   blocked?: string;
+  /** A warning shown above the first question, when something deserves a second look. */
+  notice?: string;
 }
 
 /**
@@ -57,11 +60,12 @@ export class FlowDataService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly exchangeRates: ExchangeRatesService,
+    private readonly payables: PayablesService,
     private readonly processedStock: ProcessedStockService,
     private readonly configService: ConfigService,
   ) {}
 
-  async build(companyId: string, kind: FlowKind): Promise<FlowPayload> {
+  async build(companyId: string, kind: OperationKind): Promise<FlowPayload> {
     const dates = this.calendarBounds(kind);
 
     switch (kind) {
@@ -75,6 +79,10 @@ export class FlowDataService {
         return this.batchPlanData(companyId, dates);
       case 'entry':
         return this.entryData(companyId, dates);
+      case 'expense':
+        return this.expenseData(companyId, dates);
+      case 'collect':
+        return this.collectData(companyId, dates);
     }
   }
 
@@ -87,11 +95,12 @@ export class FlowDataService {
    * every cycle ends.
    */
   private async saleData(companyId: string, dates: DateBounds): Promise<FlowPayload> {
-    const [clients, live, attributable, processed] = await Promise.all([
+    const [clients, live, attributable, processed, accounts] = await Promise.all([
       this.clientsByRelevance(companyId),
       this.sellableBatches(companyId),
       this.recentBatches(companyId),
       this.processedStock.available(companyId),
+      this.accountOptions(companyId),
     ]);
 
     if (live.options.length === 0 && processed <= 0) {
@@ -148,6 +157,13 @@ export class FlowDataService {
       });
     }
 
+    // Where a paid sale's money landed. The screenshot stays an option: a
+    // transfer is better recorded from its receipt, which carries the reference.
+    const paymentAccounts: Option[] = [
+      ...accounts.all,
+      { id: 'receipt', title: '📸 Mando la captura', description: 'Lo registro cuando llegue' },
+    ];
+
     return {
       // `data` travels to Meta and must match exactly what the screen declares
       // — one extra key and the send is rejected. `context` stays on this side,
@@ -158,7 +174,14 @@ export class FlowDataService {
         batches: live.options,
         price_hint: `Precio habitual: $${formatAmount(DEFAULT_PRICE_PER_KG)} por kg`,
       },
-      context: { clients: clientOptions, batches: live.options, processedBatches, saleTypes },
+      context: {
+        clients: clientOptions,
+        batches: live.options,
+        processedBatches,
+        saleTypes,
+        paymentAccounts,
+        accountCurrencies: accounts.currencies,
+      },
     };
   }
 
@@ -334,23 +357,185 @@ export class FlowDataService {
   }
 
   private async entryData(companyId: string, dates: DateBounds): Promise<FlowPayload> {
-    const [productOptions, batches] = await Promise.all([
+    const [productOptions, batchOptions] = await Promise.all([
       this.productOptions(companyId),
-      this.prisma.batch.findMany({
-        where: { companyId, status: { in: ['planned', 'breeding', 'for_sale'] } },
-        orderBy: { startDate: 'desc' },
-        take: MAX_OPTIONS - 1,
-        select: { id: true, code: true, breed: true, currentQuantity: true },
-      }),
+      this.batchOptionsWithNone(companyId),
     ]);
 
     if (productOptions.length === 0) {
       return { data: {}, context: {}, blocked: 'No tienes productos registrados.' };
     }
 
-    // A purchase does not have to belong to a batch — electricity and bags do
-    // not — so "no batch" is an option rather than a missing answer.
-    const batchOptions: Option[] = [
+    return {
+      data: { ...dates, products: productOptions, batches: batchOptions },
+      context: { products: productOptions, batches: batchOptions },
+    };
+  }
+
+  /**
+   * A quick expense: which account paid and which batch carries the cost.
+   *
+   * Never blocked. A farm with no accounts and no batches can still write down
+   * that it paid the electricity — "Sin cuenta" and "Sin lote" cover both.
+   *
+   * With purchases or slaughters still unpaid, it says so before the first
+   * question: paying one of those as a new expense books the same cost twice,
+   * and that is exactly what someone about to register "the payment to Carmen"
+   * would do.
+   */
+  private async expenseData(companyId: string, dates: DateBounds): Promise<FlowPayload> {
+    const [accounts, batchOptions, open] = await Promise.all([
+      this.accountOptions(companyId),
+      this.batchOptionsWithNone(companyId),
+      this.payables.listOpen(companyId),
+    ]);
+
+    const owed = Math.round(open.reduce((sum, payable) => sum + payable.balance, 0) * 100) / 100;
+    const notice =
+      open.length > 0
+        ? `⚠️ Tienes ${open.length} compra${open.length === 1 ? '' : 's'} o beneficio${open.length === 1 ? '' : 's'} ` +
+          `por pagar (${formatBs(owed)}). Si esto es el pago de uno de ellos, cancela y págalo desde 💸 Pagos y gastos: ` +
+          'registrarlo aquí contaría el costo dos veces.'
+        : undefined;
+
+    return {
+      data: { ...dates },
+      context: {
+        accountsUsd: accounts.usd,
+        accountsVes: accounts.ves,
+        accountCurrencies: accounts.currencies,
+        batches: batchOptions,
+      },
+      // "Sin lote" as the only option is not a question.
+      seedAnswers: batchOptions.length === 1 ? { batch: 'none' } : undefined,
+      notice,
+    };
+  }
+
+  /**
+   * A collection with no receipt: who paid, and the sales it can go to.
+   *
+   * Each debtor's open sales are listed under their own key, so the question
+   * about the sale can read the list for the client just chosen without a
+   * second round trip.
+   */
+  private async collectData(companyId: string, dates: DateBounds): Promise<FlowPayload> {
+    const [sales, accounts] = await Promise.all([
+      this.prisma.sale.findMany({
+        where: { companyId, paymentStatus: { in: ['pending', 'partial'] }, clientId: { not: null } },
+        orderBy: { saleDate: 'asc' },
+        select: {
+          id: true,
+          code: true,
+          saleDate: true,
+          totalAmount: true,
+          paidAmount: true,
+          client: { select: { id: true, name: true } },
+        },
+      }),
+      this.accountOptions(companyId),
+    ]);
+
+    if (sales.length === 0) {
+      return { data: {}, context: {}, blocked: '✅ Nadie te debe nada. Todas las ventas están cobradas.' };
+    }
+
+    const byClient = new Map<string, { name: string; owed: number; sales: Option[] }>();
+    for (const sale of sales) {
+      if (!sale.client) continue;
+      const balance = round2(Number(sale.totalAmount) - Number(sale.paidAmount));
+      if (balance <= 0) continue;
+
+      const entry = byClient.get(sale.client.id) ?? { name: sale.client.name, owed: 0, sales: [] };
+      entry.owed = round2(entry.owed + balance);
+      entry.sales.push({
+        id: sale.id,
+        title: `${sale.code ?? 'Venta'} · ${shortDate(sale.saleDate)}`,
+        description: `Debe ${formatUsd(balance)} de ${formatUsd(Number(sale.totalAmount))}`,
+      });
+      byClient.set(sale.client.id, entry);
+    }
+
+    const debtors = [...byClient.entries()]
+      .sort(([, a], [, b]) => b.owed - a.owed || a.name.localeCompare(b.name, 'es'))
+      .slice(0, MAX_OPTIONS);
+
+    const context: Record<string, unknown> = {
+      debtors: debtors.map(([id, debtor]) => ({
+        id,
+        title: debtor.name,
+        description: `Debe ${formatUsd(debtor.owed)}`,
+      })),
+      accountsUsd: accounts.usd,
+      accountsVes: accounts.ves,
+      accountCurrencies: accounts.currencies,
+    };
+
+    for (const [id, debtor] of debtors) {
+      context[`sales_${id}`] =
+        debtor.sales.length > 1
+          ? [
+              {
+                id: 'fifo',
+                title: '🔁 La más vieja primero',
+                description: `Reparte en sus ${debtor.sales.length} ventas`,
+              },
+              ...debtor.sales,
+            ]
+          : debtor.sales;
+    }
+
+    return { data: { ...dates }, context };
+  }
+
+  /**
+   * The active accounts, as options.
+   *
+   * Split by currency for the questions that already know it, and with each
+   * account's currency recorded so the executor can tell how the money moved
+   * without looking the account up again.
+   */
+  private async accountOptions(companyId: string) {
+    const accounts = await this.prisma.account.findMany({
+      where: { companyId, isActive: true },
+      orderBy: { name: 'asc' },
+      take: MAX_OPTIONS - 1,
+      select: { id: true, name: true, currency: true, currentBalance: true },
+    });
+
+    const toOption = (account: (typeof accounts)[number]): Option => {
+      const balance = Number(account.currentBalance);
+      return {
+        id: account.id,
+        title: account.name,
+        description: `Saldo ${account.currency === 'USD' ? formatUsd(balance) : formatBs(balance)}`,
+      };
+    };
+    const none: Option = { id: 'none', title: 'Sin cuenta', description: 'Solo lo anoto, sin mover saldos' };
+
+    return {
+      all: accounts.map(toOption),
+      usd: [...accounts.filter((account) => account.currency === 'USD').map(toOption), none],
+      ves: [...accounts.filter((account) => account.currency !== 'USD').map(toOption), none],
+      currencies: Object.fromEntries(accounts.map((account) => [account.id, account.currency])),
+    };
+  }
+
+  /**
+   * Batches something can be charged to, with "Sin lote" first.
+   *
+   * Not everything belongs to a batch — electricity and bags do not — so "no
+   * batch" is an option rather than a missing answer.
+   */
+  private async batchOptionsWithNone(companyId: string): Promise<Option[]> {
+    const batches = await this.prisma.batch.findMany({
+      where: { companyId, status: { in: ['planned', 'breeding', 'for_sale'] } },
+      orderBy: { startDate: 'desc' },
+      take: MAX_OPTIONS - 1,
+      select: { id: true, code: true, breed: true, currentQuantity: true },
+    });
+
+    return [
       { id: 'none', title: 'Sin lote', description: 'Gasto general de la granja' },
       ...batches.map((batch) => ({
         id: batch.id,
@@ -358,11 +543,6 @@ export class FlowDataService {
         description: `${batch.currentQuantity} aves`,
       })),
     ];
-
-    return {
-      data: { ...dates, products: productOptions, batches: batchOptions },
-      context: { products: productOptions, batches: batchOptions },
-    };
   }
 
   /**
@@ -458,7 +638,7 @@ export class FlowDataService {
   }
 
   /** The window the calendar allows, in the farm's own timezone. */
-  private calendarBounds(kind: FlowKind): DateBounds {
+  private calendarBounds(kind: OperationKind): DateBounds {
     const timeZone = this.configService.get<string>('ASSISTANT_TIMEZONE') ?? DEFAULT_TIMEZONE;
     const today = todayIn(timeZone);
     return {
@@ -482,4 +662,14 @@ function shiftDays(iso: string, days: number): string {
 function daysSince(date: Date): number {
   const ms = Date.now() - date.getTime();
   return Math.max(0, Math.floor(ms / 86_400_000));
+}
+
+/** `06/09`, short enough to share a row title with the sale code. */
+function shortDate(date: Date): string {
+  const [, month, day] = date.toISOString().slice(0, 10).split('-');
+  return `${day}/${month}`;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }

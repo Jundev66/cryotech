@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
 import { MovementsService } from '../treasury/movements.service';
+import { amountForAccount } from '../treasury/account-amount';
 import type { OpenPayable, PayableKind, RegisterPayablePaymentInput } from './payables.types';
 
 /**
@@ -188,8 +189,14 @@ export class PayablesService {
             accountId: input.accountId,
             direction: 'out',
             // The account moves in its own currency; the payable is settled in
-            // bolivares. Only one of the two figures is right per account.
-            amount: account.currency === 'USD' ? input.amount : amountBs,
+            // bolivares. A bolivar payment out of a dollar account is converted
+            // rather than booked as that many dollars.
+            amount: amountForAccount({
+              accountCurrency: account.currency,
+              amountBs,
+              amountUsd: input.currency === 'USD' ? input.amount : null,
+              rate: exchangeRate,
+            }),
             movementDate: paymentDate,
             reference: input.reference ?? null,
             counterparty: payable.supplierName,

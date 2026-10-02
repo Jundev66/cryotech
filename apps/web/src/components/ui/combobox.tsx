@@ -67,6 +67,14 @@ export function Combobox({
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (options.length > 0 && options[highlighted]) {
+        select(options[highlighted]);
+      }
+      return;
+    }
+
     if (options.length === 0) return;
 
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -77,15 +85,18 @@ export function Combobox({
       listRef.current?.children[next]?.scrollIntoView({ block: 'nearest' });
       return;
     }
+  }
 
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      select(options[highlighted]);
+  function handleOpenChange(isOpen: boolean) {
+    if (!isOpen && search.trim() && options.length === 1 && !value) {
+      select(options[0]);
+      return;
     }
+    setOpen(isOpen);
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -112,6 +123,7 @@ export function Combobox({
           <SearchInput
             value={search}
             onChange={onSearchChange}
+            onKeyDown={onKeyDown}
             placeholder={searchPlaceholder}
             autoFocus
             data-testid="combobox-search"
@@ -131,6 +143,10 @@ export function Combobox({
                 key={option.value}
                 role="option"
                 aria-selected={option.value === value}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  select(option);
+                }}
                 onClick={() => select(option)}
                 onMouseEnter={() => setHighlighted(index)}
                 className={cn(

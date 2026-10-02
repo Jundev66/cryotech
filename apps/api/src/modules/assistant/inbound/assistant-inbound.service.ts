@@ -120,6 +120,11 @@ export class AssistantInboundService implements OnModuleDestroy {
         await this.inbound.releaseForRetry(channel, externalId, reason);
       } else {
         await this.inbound.markErrored(channel, externalId, reason);
+        // Nothing will deliver this again, so staying silent would leave the
+        // user waiting for an answer that is never coming.
+        await this.sendQuietly(channel, identity.externalUserId, {
+          text: '⚠️ No pude procesar tu mensaje. Intenta de nuevo, o escribe *menu*.',
+        });
       }
     }
   }

@@ -36,6 +36,9 @@ export interface ReadReceiptResult {
 
 const DEFAULT_MIN_CONFIDENCE = 70;
 
+/** How long the OCR worker stays loaded without a receipt before it is released. */
+const WORKER_IDLE_MS = 30 * 60_000;
+
 /** Does the OCR text hold anything that could plausibly be this field? */
 const FIELD_EVIDENCE: Record<string, RegExp> = {
   // A money figure always carries a decimal separator.
@@ -62,10 +65,26 @@ function textCouldContain(missing: string[], ocrText: string): boolean {
   });
 }
 
+/**
+ * Whether the paid AI reader may be tried at all.
+ *
+ * Opt-in by the key alone: with no ANTHROPIC_API_KEY every attempt could only
+ * fail — twice per receipt, once per tier, each leaving an error in the log —
+ * so it is not attempted, and the bot asks for whatever the free reader missed.
+ * Setting a key turns it on with nothing else to change; OCR_FALLBACK_ENABLED
+ * is only for switching it off on purpose while a key is present.
+ */
+export function isAiFallbackAvailable(config: { get(key: string): unknown }): boolean {
+  const key = config.get('ANTHROPIC_API_KEY');
+  const hasKey = typeof key === 'string' && key.trim() !== '';
+  return hasKey && config.get('OCR_FALLBACK_ENABLED') !== 'false';
+}
+
 @Injectable()
 export class ReceiptReaderService implements OnModuleDestroy {
   private readonly logger = new Logger(ReceiptReaderService.name);
   private workerPromise: Promise<Worker> | null = null;
+  private idleTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -112,8 +131,13 @@ export class ReceiptReaderService implements OnModuleDestroy {
       };
     }
 
-    if (this.configService.get('OCR_FALLBACK_ENABLED') === 'false') {
-      this.logger.warn(`Local read incomplete (${missing.join(', ')}) and the AI fallback is disabled`);
+    if (!isAiFallbackAvailable(this.configService)) {
+      // Expected without a key, not a problem: the assistant asks for the rest.
+      this.logger.log(
+        this.configService.get('OCR_FALLBACK_ENABLED') === 'false'
+          ? `Local read incomplete (${missing.join(', ')}); AI fallback switched off by OCR_FALLBACK_ENABLED`
+          : `Local read incomplete (${missing.join(', ')}); no ANTHROPIC_API_KEY, local read only`,
+      );
       return {
         fields: localFields,
         tier: 'failed',
@@ -234,45 +258,56 @@ export class ReceiptReaderService implements OnModuleDestroy {
   }
 
   /**
-   * Loads the worker at boot instead of on the first receipt.
+   * One worker for the process, created by the first receipt that needs it and
+   * let go after a while without receipts.
    *
-   * Creating it lazily meant the first screenshot after every restart also paid
-   * for the 3.3 MB of Spanish traineddata — several seconds, on the one message
-   * most likely to be someone testing whether the bot still works.
-   */
-  onModuleInit() {
-    void this.getWorker().catch((error) =>
-      this.logger.warn(
-        `Tesseract warm-up failed; the first receipt will pay for it: ${(error as Error)?.message}`,
-      ),
-    );
-  }
-
-  /**
-   * One worker for the process. Spinning one up per receipt would re-load the
-   * Spanish traineddata every time, which dominates the runtime.
+   * It used to load at boot and stay. On a free instance with 512 MB that may
+   * go days between receipts, the OCR engine sat in memory the whole time next
+   * to everything else. With the model shipped in the image (`OCR_LANG_PATH`)
+   * a load is a couple of seconds from disk rather than a download, so paying
+   * it on the first receipt after a quiet spell is the better trade.
    */
   private getWorker(): Promise<Worker> {
+    this.scheduleRelease();
     if (!this.workerPromise) {
       const lang = this.configService.get<string>('OCR_LANG') ?? 'spa';
+      // Where the model lives, when it ships with the image. Unset — as on a
+      // development machine — tesseract.js downloads it and caches it locally.
+      const langPath = this.configService.get<string>('OCR_LANG_PATH');
       // Cleared on failure: a rejected promise left in the field would make
-      // every later receipt fail for the life of the process, and warming up at
-      // boot makes a transient failure here far likelier than it used to be.
-      this.workerPromise = createWorker(lang).catch((error) => {
-        this.workerPromise = null;
-        throw error;
-      });
+      // every later receipt fail for the life of the process.
+      this.workerPromise = createWorker(lang, undefined, langPath ? { langPath, cachePath: langPath } : {}).catch(
+        (error) => {
+          this.workerPromise = null;
+          throw error;
+        },
+      );
     }
     return this.workerPromise;
   }
 
-  async onModuleDestroy() {
-    if (!this.workerPromise) return;
+  /** Restarts the idle countdown: every receipt keeps the worker around a little longer. */
+  private scheduleRelease() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => void this.release(), WORKER_IDLE_MS);
+    // A pending release must not hold the process open at shutdown.
+    this.idleTimer.unref?.();
+  }
+
+  private async release() {
+    const pending = this.workerPromise;
+    this.workerPromise = null;
+    if (!pending) return;
     try {
-      const worker = await this.workerPromise;
+      const worker = await pending;
       await worker.terminate();
     } catch {
-      // Shutting down; a worker that never came up is not worth reporting.
+      // A worker that never came up has nothing to release.
     }
+  }
+
+  async onModuleDestroy() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    await this.release();
   }
 }

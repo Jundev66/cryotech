@@ -23,12 +23,17 @@ import { FlowSubmissionService } from './flows/flow-submission.service';
 import { WizardService } from './wizard/wizard.service';
 import { ReceiptIntakeService } from './receipt-intake.service';
 import { ReceiptExecutorService } from './executors/receipt-executor.service';
+import { SalePaymentAllocator } from './executors/sale-payment.allocator';
 import { DirectionResolver } from './resolvers/direction.resolver';
 import { ClientResolver } from './resolvers/client.resolver';
 import { DraftService } from './drafts/draft.service';
 import { ReceiptQueueService } from './queue/receipt-queue.service';
+import { ReceiptCompletionService } from './queue/receipt-completion.service';
 import { SummaryFormatter } from './formatting/summary.formatter';
 import { AssistantDevController } from './assistant-dev.controller';
+import { AssistantMobileController } from './assistant-mobile.controller';
+import { DigestService } from './digest/digest.service';
+import { DigestScheduler } from './digest/digest.scheduler';
 
 /**
  * Channel-agnostic core. It never imports a transport, so adding one (Telegram,
@@ -59,8 +64,12 @@ import { AssistantDevController } from './assistant-dev.controller';
     ProcessingModule,
   ],
   // The simulate controller is the fastest way to exercise the whole pipeline
-  // without Meta in the loop; it refuses to mount in production.
-  controllers: process.env.NODE_ENV === 'production' ? [] : [AssistantDevController],
+  // without Meta in the loop; it refuses to mount in production. AssistantMobileController
+  // is mounted in all environments for mobile app chat.
+  controllers:
+    process.env.NODE_ENV === 'production'
+      ? [AssistantMobileController]
+      : [AssistantDevController, AssistantMobileController],
   providers: [
     AssistantService,
     AssistantInboundService,
@@ -69,10 +78,12 @@ import { AssistantDevController } from './assistant-dev.controller';
     InboundMessageService,
     ReceiptIntakeService,
     ReceiptExecutorService,
+    SalePaymentAllocator,
     DirectionResolver,
     ClientResolver,
     DraftService,
     ReceiptQueueService,
+    ReceiptCompletionService,
     SummaryFormatter,
     MenuService,
     FlowService,
@@ -80,6 +91,8 @@ import { AssistantDevController } from './assistant-dev.controller';
     FlowDataService,
     FlowSubmissionService,
     WizardService,
+    DigestService,
+    DigestScheduler,
   ],
   exports: [
     AssistantService,

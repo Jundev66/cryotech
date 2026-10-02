@@ -44,6 +44,7 @@ FILTER="${1:-}"
 SUITES=(
   check-tenancy
   check-wizard
+  check-quick-entry
   check-telegram
   check-assistant-e2e
   check-flows
@@ -51,6 +52,7 @@ SUITES=(
   check-purchases
   check-treasury
   check-queue
+  check-receipt-completion
   check-receivables
 )
 

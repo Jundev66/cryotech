@@ -1,14 +1,22 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { BotFlowSession } from '@prisma/client';
+import { TRANSACTION_CATEGORY_LABELS } from '@cryotech/shared-types';
 import { SalesService } from '../../sales/sales.service';
 import { DailyLogsService } from '../../daily-logs/daily-logs.service';
 import { BatchesService } from '../../batches/batches.service';
 import { EntriesService } from '../../entries/entries.service';
 import { ProcessingService } from '../../processing/processing.service';
 import { ExchangeRatesService } from '../../exchange-rates/exchange-rates.service';
+import { TransactionsService } from '../../transactions/transactions.service';
+import { SalePaymentAllocator, describeAllocation } from '../executors/sale-payment.allocator';
 import { formatBs, formatUsd, parseLocalNumber } from '../formatting/number.format';
 import type { OutgoingMessage } from '../types/assistant.types';
-import { isFlowKind, type FlowKind } from './flow.catalog';
+import { EXPENSE_WIZARD_CATEGORIES } from '../wizard/wizard.catalog';
+import { isOperationKind, type OperationKind } from './flow.catalog';
+
+/** Days a sale on credit has before it counts as overdue, unless configured. */
+const DEFAULT_CREDIT_DAYS = 7;
 
 /** What a form sends back: every value arrives as a string. */
 type Submission = Record<string, unknown>;
@@ -24,6 +32,18 @@ interface EntryLineInput {
   quantity: number;
   costPerUnit?: number;
   deliveryCost?: number;
+}
+
+/**
+ * What "Deshacer" has to take back after an operation.
+ *
+ * Only money the bot booked itself: an expense, or the payments of a
+ * collection or of a sale paid on the spot. A sale, a purchase or a daily log
+ * is corrected from the web, where it can be looked at first.
+ */
+export interface UndoPlan {
+  transactionIds?: string[];
+  paymentIds?: string[];
 }
 
 /**
@@ -44,17 +64,20 @@ export class FlowSubmissionService {
     private readonly entries: EntriesService,
     private readonly processing: ProcessingService,
     private readonly exchangeRates: ExchangeRatesService,
+    private readonly transactions: TransactionsService,
+    private readonly allocator: SalePaymentAllocator,
+    private readonly configService: ConfigService,
   ) {}
 
   async execute(
     session: BotFlowSession,
     submission: Submission,
-  ): Promise<{ reply: OutgoingMessage; resultType: string; resultId: string | null }> {
-    if (!isFlowKind(session.flowKind)) {
+  ): Promise<{ reply: OutgoingMessage; resultType: string; resultId: string | null; undo?: UndoPlan }> {
+    if (!isOperationKind(session.flowKind)) {
       throw new BadRequestException(`Formulario desconocido: ${session.flowKind}`);
     }
 
-    switch (session.flowKind as FlowKind) {
+    switch (session.flowKind as OperationKind) {
       case 'sale':
         return this.registerSale(session, submission);
       case 'daily_log':
@@ -65,6 +88,10 @@ export class FlowSubmissionService {
         return this.planBatch(session, submission);
       case 'entry':
         return this.registerEntry(session, submission);
+      case 'expense':
+        return this.registerExpense(session, submission);
+      case 'collect':
+        return this.registerCollection(session, submission);
     }
   }
 
@@ -75,6 +102,18 @@ export class FlowSubmissionService {
     const pricePerKg = this.positiveNumber(submission.price_per_kg, 'precio por kg');
     const saleDate = this.date(submission.sale_date, 'fecha');
     const paid = submission.payment === 'paid';
+
+    // A paid sale whose account was named gets its payment booked now. A native
+    // WhatsApp form never asks, so it lands on "receipt": the old behaviour.
+    const paymentAccount = String(submission.payment_account ?? '').trim() || 'receipt';
+    const payToAccount =
+      paid && paymentAccount !== 'receipt'
+        ? this.pickOption(session, 'paymentAccounts', paymentAccount)
+        : null;
+
+    // On credit, it falls due after the usual term. With no due date a sale can
+    // never be overdue, and the reminders have nothing to remind about.
+    const dueDate = paid ? undefined : this.dueDateFor(saleDate);
 
     // Everything parked with "Otro cliente", plus the one on screen — if there
     // is one. Closing a run from the client question parks the last sale and
@@ -93,6 +132,7 @@ export class FlowSubmissionService {
         weightKg,
         pricePerKg,
         totalAmount: round2(weightKg * pricePerKg),
+        dueDate,
       };
     });
 
@@ -112,15 +152,28 @@ export class FlowSubmissionService {
         `✅ ${sales.length} ventas registradas`,
         ...sales.map((sale) => `▸ ${sale.code ?? ''} ${sale.client?.name ?? ''}`.trim()),
         `${totalBirds} aves · ${formatUsd(round2(totalAmount))} en total`,
-        paid
-          ? 'Mándame las capturas de los pagos y registro los cobros.'
-          : 'Quedan fiadas. Cuando te paguen, mándame la captura y la aplico.',
       ];
+
+      // "Deshacer" on a paid run takes back the payments only: the sales stand,
+      // and go back to owing.
+      let runUndo: UndoPlan | undefined;
+      if (payToAccount) {
+        const payment = await this.payInFull(session, sales, payToAccount, saleDate);
+        lines.push(payment.note);
+        if (payment.paymentIds.length > 0) runUndo = { paymentIds: payment.paymentIds };
+      } else {
+        lines.push(
+          paid
+            ? 'Mándame las capturas de los pagos y registro los cobros.'
+            : `Quedan fiadas hasta el ${shortDay(dueDate as string)}. Cuando te paguen, mándame la captura o toca 💵 Cobro.`,
+        );
+      }
 
       return {
         reply: { text: lines.join('\n') },
         resultType: 'sale',
         resultId: sales[0]?.id ?? null,
+        undo: runUndo,
       };
     }
 
@@ -134,21 +187,209 @@ export class FlowSubmissionService {
       pricePerKg,
       totalAmount: only.totalAmount,
       saleDate,
+      dueDate,
     });
 
-    // A sale marked "paid" still needs the money booked, and a form cannot say
-    // which account it landed in. Say so rather than silently leaving it owing.
     const lines = [
       `✅ Venta registrada ${sale.code ?? ''}`.trim(),
       `${only.quantity} aves · ${only.weightKg} kg · ${formatUsd(only.totalAmount)}`,
     ];
-    lines.push(
-      paid
-        ? 'Mándame la captura del pago para registrar el cobro y moverlo en tesorería.'
-        : 'Queda fiada. Cuando te paguen, mándame la captura y la aplico.',
-    );
 
-    return { reply: { text: lines.join('\n') }, resultType: 'sale', resultId: sale.id };
+    let undo: UndoPlan | undefined;
+    if (payToAccount) {
+      const payment = await this.payInFull(session, [sale], payToAccount, saleDate);
+      lines.push(payment.note);
+      if (payment.paymentIds.length > 0) undo = { paymentIds: payment.paymentIds };
+    } else {
+      // Paid by transfer: the receipt carries the reference and the account,
+      // so it is still the better way in. Say so rather than silently leaving it owing.
+      lines.push(
+        paid
+          ? 'Mándame la captura del pago para registrar el cobro y moverlo en tesorería.'
+          : `Queda fiada hasta el ${shortDay(dueDate as string)}. Cuando te paguen, mándame la captura o toca 💵 Cobro.`,
+      );
+    }
+
+    return { reply: { text: lines.join('\n') }, resultType: 'sale', resultId: sale.id, undo };
+  }
+
+  /**
+   * Books the full payment of sales that were just created as paid.
+   *
+   * Never throws. The sales are already written, and a failure thrown from
+   * here would put the wizard back on its confirmation screen — where tapping
+   * "Registrar" again would create them a second time. So the sale stands and
+   * the reply says what is left to do.
+   */
+  private async payInFull(
+    session: BotFlowSession,
+    sales: Array<{ id: string; totalAmount: unknown }>,
+    accountId: string,
+    paymentDate: string,
+  ): Promise<{ note: string; paymentIds: string[] }> {
+    try {
+      const payments = await this.sales.registerPayments(
+        session.companyId,
+        sales.map((sale) => ({
+          saleId: sale.id,
+          amount: Number(sale.totalAmount),
+          accountId,
+          paymentDate,
+          notes: 'Pagada al registrar la venta',
+        })),
+      );
+      const where = this.optionTitle(session, ['paymentAccounts'], accountId);
+      return {
+        note: `💵 Cobro registrado${where ? ` en ${where}` : ''}.`,
+        paymentIds: payments.map((payment) => payment.id),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error desconocido';
+      this.logger.error(`Sale registered but its payment failed: ${message}`);
+      return {
+        note: `⚠️ La venta quedó registrada, pero no pude registrar el cobro: ${message}\nRegístralo con 💵 Cobro sin captura.`,
+        paymentIds: [],
+      };
+    }
+  }
+
+  /**
+   * Takes back what an operation registered, from its "Deshacer" button.
+   *
+   * Payments are voided together, in one transaction, and expenses one by one
+   * — an operation only ever carries one kind. A sale paid on the spot keeps
+   * the sale: only its payment is undone, and it is left owing.
+   */
+  async undo(companyId: string, plan: UndoPlan): Promise<string> {
+    const lines: string[] = [];
+
+    if (plan.paymentIds?.length) {
+      await this.sales.voidPayments(companyId, plan.paymentIds);
+      lines.push(
+        plan.paymentIds.length === 1
+          ? '↩️ Deshice el cobro. La venta vuelve a quedar debiendo.'
+          : `↩️ Deshice los ${plan.paymentIds.length} cobros. Las ventas vuelven a quedar debiendo.`,
+      );
+    }
+
+    for (const transactionId of plan.transactionIds ?? []) {
+      const voided = await this.transactions.voidManual(companyId, transactionId);
+      lines.push(`↩️ Deshice el registro ${voided.code ?? ''}`.trim() + '.');
+    }
+
+    lines.push('_Los saldos de las cuentas quedaron como antes._');
+    return lines.join('\n');
+  }
+
+  /**
+   * A cost with no receipt: cash, a transfer nobody screenshotted, the owner
+   * taking money out. Goes through the same service as a web entry, so it
+   * converts dollars with the BCV rate and moves the account in one transaction.
+   */
+  private async registerExpense(session: BotFlowSession, submission: Submission) {
+    const category = this.pickOneOf(
+      submission.category,
+      EXPENSE_WIZARD_CATEGORIES.map((option) => option.id),
+      'la categoría',
+    );
+    const amount = this.positiveNumber(submission.amount, 'monto');
+    const currency = this.pickOneOf(submission.currency, ['VES', 'USD'] as const, 'la moneda');
+    const accountId = this.accountFrom(session, submission.account, currency);
+    const rawBatch = String(submission.batch ?? '').trim();
+    const batchId = rawBatch === '' || rawBatch === 'none' ? undefined : this.pickOption(session, 'batches', rawBatch);
+    const transactionDate = this.date(submission.expense_date, 'fecha');
+    const description = this.optionalText(submission.description);
+
+    const transaction = await this.transactions.create(session.companyId, {
+      type: 'expense',
+      category,
+      amount,
+      currency,
+      accountId,
+      batchId,
+      description,
+      transactionDate,
+    });
+
+    const label = (TRANSACTION_CATEGORY_LABELS as Record<string, string>)[category] ?? category;
+    const lines = [
+      `✅ ${category === 'owner_draw' ? 'Retiro' : 'Gasto'} registrado ${transaction.code ?? ''}`.trim(),
+      `${label} · ${currency === 'USD' ? formatUsd(amount) : formatBs(amount)}`,
+    ];
+    if (description) lines.push(description);
+
+    const batchTitle = batchId ? this.optionTitle(session, ['batches'], batchId) : null;
+    if (batchTitle) lines.push(`Cargado al lote ${batchTitle}`);
+
+    const accountTitle = accountId ? this.optionTitle(session, ['accountsUsd', 'accountsVes'], accountId) : null;
+    lines.push(accountTitle ? `Salió de ${accountTitle}` : '_Sin cuenta: no movió ningún saldo._');
+
+    return {
+      reply: { text: lines.join('\n') },
+      resultType: 'transaction',
+      resultId: transaction.id,
+      undo: { transactionIds: [transaction.id] },
+    };
+  }
+
+  /** Money received with no receipt to read — spread over the client's sales. */
+  private async registerCollection(session: BotFlowSession, submission: Submission) {
+    const clientId = this.pickOption(session, 'debtors', submission.client);
+    const rawSale = String(submission.sale ?? '').trim();
+    const saleId = rawSale === 'fifo' ? null : this.pickOption(session, `sales_${clientId}`, rawSale);
+    const currency = this.pickOneOf(submission.currency, ['VES', 'USD'] as const, 'la moneda');
+    const amount = this.positiveNumber(submission.amount, 'monto');
+    const accountId = this.accountFrom(session, submission.account, currency);
+    const paymentDate = this.date(submission.payment_date, 'fecha');
+
+    const result = await this.allocator.apply(session.companyId, {
+      clientId,
+      saleId,
+      amount,
+      currency,
+      accountId,
+      paymentDate,
+      notes: 'Cobro sin comprobante, registrado desde el asistente',
+    });
+
+    const lines = describeAllocation(result, this.optionTitle(session, ['debtors'], clientId));
+    const accountTitle = accountId ? this.optionTitle(session, ['accountsUsd', 'accountsVes'], accountId) : null;
+    lines.push(accountTitle ? `Entró en ${accountTitle}` : '_Sin cuenta: no movió ningún saldo._');
+
+    return {
+      reply: { text: lines.join('\n') },
+      resultType: 'sale_payment',
+      resultId: result.lines[0]?.saleId ?? null,
+      undo: { paymentIds: result.paymentIds },
+    };
+  }
+
+  /** The account a quick operation used, from the list for its currency. "none" is no account. */
+  private accountFrom(session: BotFlowSession, raw: unknown, currency: 'VES' | 'USD'): string | undefined {
+    const value = String(raw ?? '').trim();
+    if (value === '' || value === 'none') return undefined;
+    return this.pickOption(session, currency === 'USD' ? 'accountsUsd' : 'accountsVes', value);
+  }
+
+  /** The title an id was offered under, for a reply that names things. */
+  private optionTitle(session: BotFlowSession, keys: string[], id: string): string | null {
+    const context = (session.context ?? {}) as Record<string, unknown>;
+    for (const key of keys) {
+      const options = context[key];
+      if (!Array.isArray(options)) continue;
+      const match = (options as OptionRef[]).find((option) => option?.id === id);
+      if (match) return match.title;
+    }
+    return null;
+  }
+
+  /** When a sale on credit falls due: the sale date plus the configured term. */
+  private dueDateFor(saleDate: string): string {
+    const configured = Number(this.configService.get('ASSISTANT_DEFAULT_CREDIT_DAYS') ?? DEFAULT_CREDIT_DAYS);
+    const days = Number.isInteger(configured) && configured >= 0 ? configured : DEFAULT_CREDIT_DAYS;
+    const date = new Date(`${saleDate}T12:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
   }
 
   /** The sales parked by "Otro cliente", still unwritten. */
@@ -469,6 +710,12 @@ export class FlowSubmissionService {
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** `2026-09-19` → `19/09`. */
+function shortDay(iso: string): string {
+  const [, month, day] = iso.split('-');
+  return `${day}/${month}`;
 }
 
 function round2(value: number): number {

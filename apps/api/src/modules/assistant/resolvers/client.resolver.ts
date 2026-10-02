@@ -3,7 +3,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { rankByName } from './fuzzy.util';
 
 /** Above this a single candidate is used without asking. */
-const CONFIDENT_MATCH = 0.85;
+export const CONFIDENT_MATCH = 0.85;
 /** Below this a candidate is not offered at all. */
 const PLAUSIBLE_MATCH = 0.6;
 

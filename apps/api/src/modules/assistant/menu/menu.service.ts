@@ -11,6 +11,7 @@ import { FlowService } from '../flows/flow.service';
 import { WizardService } from '../wizard/wizard.service';
 import { ClientResolver } from '../resolvers/client.resolver';
 import type { FlowKind } from '../flows/flow.catalog';
+import { startOfToday } from '@cryotech/shared-types';
 import { formatBs, formatUsd } from '../formatting/number.format';
 import { BUTTON, buildButtonId, type OutgoingMessage } from '../types/assistant.types';
 import { MENU_OPERATIONS, type MenuOperation } from './menu.catalog';
@@ -131,8 +132,19 @@ export class MenuService {
   private async openPayables(companyId: string): Promise<OutgoingMessage> {
     const open = await this.payables.listOpen(companyId);
 
+    // Offered whatever is owed: a cash cost has no receipt to forward, and until
+    // this button existed it had no way into the books at all.
+    const expenseButton = {
+      id: buildButtonId(BUTTON.FORM, 'expense'),
+      title: '💸 Registrar un gasto',
+      description: 'Gasoil, obreros, servicios, efectivo…',
+    };
+
     if (open.length === 0) {
-      return { text: '✅ No tienes compras ni beneficios pendientes de pago.' };
+      return {
+        text: '✅ No tienes compras ni beneficios pendientes de pago.\n\n¿Pagaste otra cosa? Regístrala como gasto.',
+        buttons: [expenseButton],
+      };
     }
 
     const total = open.reduce((sum, payable) => sum + payable.balance, 0);
@@ -151,13 +163,14 @@ export class MenuService {
 
     if (open.length > 10) lines.push(`\n_y ${open.length - 10} más._`);
 
-    // No buttons: paying needs the account, the reference and the date, and the
-    // receipt already carries all three. Asking for them one by one would be
-    // slower than forwarding the screenshot.
+    // No button per payable: paying one needs the account, the reference and the
+    // date, and the receipt already carries all three. Asking for them one by
+    // one would be slower than forwarding the screenshot.
     lines.push('');
     lines.push('Mándame la captura del pago y lo aplico al que corresponda.');
+    lines.push('_¿Fue otro gasto, sin captura? Tócalo abajo._');
 
-    return { text: lines.join('\n') };
+    return { text: lines.join('\n'), buttons: [expenseButton] };
   }
 
   private async debtors(companyId: string): Promise<OutgoingMessage> {
@@ -190,17 +203,27 @@ export class MenuService {
 
     lines.push('');
     lines.push('Toca un cliente para ver el detalle, o escribe su nombre para buscarlo.');
+    lines.push('_¿Te pagaron en efectivo o sin captura? Toca 💵 Cobro sin captura._');
 
     return {
       text: lines.join('\n'),
-      // Only rows with a real client: "Sin cliente" has no id to look up.
-      buttons: shown
-        .filter((client) => client.clientId)
-        .map((client) => ({
-          id: buildButtonId(BUTTON.CLIENT_SALES, client.clientId as string),
-          title: `👤 ${client.clientName}`,
-          description: `${formatUsd(client.owedUsd)} pendiente`,
-        })),
+      buttons: [
+        {
+          id: buildButtonId(BUTTON.FORM, 'collect'),
+          title: '💵 Cobro sin captura',
+          description: 'Efectivo, dólares, Zelle…',
+        },
+        // Only rows with a real client: "Sin cliente" has no id to look up.
+        // Nine, not ten: the collection row above takes one of WhatsApp's ten.
+        ...shown
+          .filter((client) => client.clientId)
+          .slice(0, 9)
+          .map((client) => ({
+            id: buildButtonId(BUTTON.CLIENT_SALES, client.clientId as string),
+            title: `👤 ${client.clientName}`,
+            description: `${formatUsd(client.owedUsd)} pendiente`,
+          })),
+      ],
     };
   }
 
@@ -214,11 +237,24 @@ export class MenuService {
 
     const sales = await this.clientResolver.pendingSales(companyId, clientId);
     if (sales.length === 0) {
-      return { text: `✅ *${client.name}* no debe nada. Todas sus ventas están cobradas.` };
+      return {
+        text: `✅ *${client.name}* no debe nada. Todas sus ventas están cobradas.`,
+        buttons: [
+          {
+            id: buildButtonId(BUTTON.FORM, 'sale', clientId),
+            title: '🍗 Registrar venta',
+            description: `Nueva venta a ${client.name}`,
+          },
+          {
+            id: buildButtonId(BUTTON.FORM, 'collect', clientId),
+            title: '💵 Registrar cobro',
+            description: `Cobro a favor de ${client.name}`,
+          },
+        ],
+      };
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = startOfToday();
     const totalOwed = round2(
       sales.reduce((sum, sale) => sum + (Number(sale.totalAmount) - Number(sale.paidAmount)), 0),
     );
@@ -233,7 +269,23 @@ export class MenuService {
     }
 
     lines.push('', 'Mándame la captura del pago y lo aplico a la venta más vieja.');
-    return { text: lines.join('\n') };
+    lines.push('_¿Te pagó en efectivo o sin captura? Toca 💵 Registrar cobro._');
+    return {
+      text: lines.join('\n'),
+      // The client travels in the button, so the collection opens already on them.
+      buttons: [
+        {
+          id: buildButtonId(BUTTON.FORM, 'collect', clientId),
+          title: '💵 Registrar cobro',
+          description: 'Efectivo, dólares, Zelle…',
+        },
+        {
+          id: buildButtonId(BUTTON.FORM, 'sale', clientId),
+          title: '🍗 Registrar venta',
+          description: `Nueva venta a ${client.name}`,
+        },
+      ],
+    };
   }
 
   private async overview(companyId: string): Promise<OutgoingMessage> {
@@ -256,6 +308,14 @@ export class MenuService {
       `Debes: *${formatBs(weOwe)}*`,
       `  ${payables.length} operación${payables.length === 1 ? '' : 'es'} sin pagar`,
     ];
+
+    if (receivables.clients.length > 0) {
+      lines.push('', '👥 *Clientes que deben:*');
+      for (const client of receivables.clients) {
+        const late = client.overdueCount > 0 ? ` · ⚠️ ${client.overdueCount} vencida${client.overdueCount === 1 ? '' : 's'}` : '';
+        lines.push(`▸ *${client.clientName}* · ${formatUsd(client.owedUsd)}${late}`);
+      }
+    }
 
     if (overdue.length > 0) {
       lines.push('');

@@ -8,7 +8,8 @@ import { z } from 'zod';
  * the next feature arrives on. This validates the shape we depend on and lets
  * the rest travel untouched.
  */
-const chatSchema = z.object({ id: z.number() }).passthrough();
+/** `type` is private | group | supergroup | channel; only private chats are acted on. */
+const chatSchema = z.object({ id: z.number(), type: z.string().optional() }).passthrough();
 const senderSchema = z.object({ id: z.number() }).passthrough();
 
 const messageSchema = z

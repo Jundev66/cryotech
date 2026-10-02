@@ -54,4 +54,11 @@ export class TransactionsController {
   findOne(@CurrentCompanyId() companyId: string, @Param('id') id: string) {
     return this.transactionsService.findOne(companyId, id);
   }
+
+  /** Undoes a hand-recorded income or expense and the money it moved. */
+  @Post(':id/void')
+  @RequirePermission('transactions', 'delete')
+  voidManual(@CurrentCompanyId() companyId: string, @Param('id') id: string) {
+    return this.transactionsService.voidManual(companyId, id);
+  }
 }

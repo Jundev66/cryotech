@@ -1,12 +1,10 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { BotDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { SalesService } from '../../sales/sales.service';
 import { TransactionsService } from '../../transactions/transactions.service';
 import { MovementsService } from '../../treasury/movements.service';
 import { PayablesService } from '../../payables/payables.service';
-import { SequenceService } from '../../../common/services/sequence.service';
-import { ClientResolver } from '../resolvers/client.resolver';
+import { SalePaymentAllocator, describeAllocation } from './sale-payment.allocator';
 import { formatBs, formatUsd } from '../formatting/number.format';
 import type { OutgoingMessage } from '../types/assistant.types';
 import type { PayableKind } from '../../payables/payables.types';
@@ -28,10 +26,12 @@ interface DraftResolved {
   clientId: string | null;
   clientName: string | null;
   clientIsNew: boolean;
+  awaiting?: string[];
 }
 
 export type ExecuteAction =
-  | { kind: 'sale_payment' }
+  /** `clientId` when the user picked who paid; otherwise the one the reader matched. */
+  | { kind: 'sale_payment'; clientId?: string }
   | { kind: 'payable_payment'; payableKind: PayableKind; payableId: string }
   | { kind: 'category'; category: string }
   | { kind: 'transfer' };
@@ -45,28 +45,27 @@ export type ExecuteAction =
  */
 @Injectable()
 export class ReceiptExecutorService {
-  private readonly logger = new Logger(ReceiptExecutorService.name);
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sales: SalesService,
     private readonly transactions: TransactionsService,
     private readonly movements: MovementsService,
     private readonly payables: PayablesService,
-    private readonly clients: ClientResolver,
-    private readonly sequenceService: SequenceService,
+    private readonly allocator: SalePaymentAllocator,
   ) {}
 
   async execute(draft: BotDraft, action: ExecuteAction): Promise<OutgoingMessage> {
     const entities = draft.entities as unknown as DraftEntities;
     const resolved = draft.resolved as unknown as DraftResolved;
 
+    if (resolved.awaiting && resolved.awaiting.length > 0) {
+      throw new BadRequestException('Al comprobante todavía le faltan datos por completar');
+    }
     if (entities.amount === null) throw new BadRequestException('El borrador no tiene monto');
     if (!resolved.ourAccountId) throw new BadRequestException('El borrador no tiene cuenta');
 
     switch (action.kind) {
       case 'sale_payment':
-        return this.applySalePayment(draft, entities, resolved);
+        return this.applySalePayment(draft, entities, resolved, action.clientId);
       case 'payable_payment':
         return this.applyPayablePayment(draft, entities, resolved, action);
       case 'category':
@@ -76,72 +75,57 @@ export class ReceiptExecutorService {
     }
   }
 
+  /**
+   * Applies the money to the client's open sales, oldest first.
+   *
+   * It used to settle only the oldest sale and report the rest as "apply it by
+   * hand" — which nobody could do from the phone. It is now spread the same way
+   * a cash collection is, in one transaction, and only what exceeds everything
+   * owed is left over.
+   */
   private async applySalePayment(
     draft: BotDraft,
     entities: DraftEntities,
     resolved: DraftResolved,
+    chosenClientId?: string,
   ): Promise<OutgoingMessage> {
-    const clientId = await this.ensureClient(draft.companyId, entities, resolved);
-    if (!clientId) {
-      throw new BadRequestException('No pude identificar el cliente de este cobro');
-    }
+    const client = await this.payer(draft.companyId, resolved, chosenClientId);
 
-    const pending = await this.clients.pendingSales(draft.companyId, clientId);
-    if (pending.length === 0) {
-      throw new BadRequestException(
-        `${resolved.clientName ?? entities.counterparty} no tiene ventas pendientes de cobro`,
-      );
-    }
-
-    const rate = resolved.exchangeRate;
-    const isUsd = entities.currency === 'USD';
-    if (!isUsd && !rate) {
-      throw new BadRequestException('No hay tasa de cambio para convertir el cobro a dólares');
-    }
-
-    const amountBs = isUsd ? round2(entities.amount! * (rate as number)) : entities.amount!;
-    const amountUsd = isUsd ? entities.amount! : round2(entities.amount! / (rate as number));
-
-    // Oldest debt first, capped at what that sale still owes. A payment larger
-    // than the oldest sale is reported rather than spread silently across
-    // several — guessing the allocation is the kind of thing you find out about
-    // a month later.
-    const target = pending[0];
-    const remaining = round2(Number(target.totalAmount) - Number(target.paidAmount));
-    const applied = Math.min(amountUsd, remaining);
-    const leftover = round2(amountUsd - applied);
-
-    // The bolivar figure on the receipt is what the bank actually moved, so it
-    // is authoritative. Converting it to dollars and back would drift by a
-    // bolivar or two and leave the account permanently unable to reconcile
-    // against the bank statement. Only prorate when part of the payment could
-    // not be applied to this sale.
-    const appliedBs = applied === amountUsd ? amountBs : round2(applied * (rate as number));
-
-    await this.sales.registerPayment(draft.companyId, target.id, {
-      amount: applied,
-      amountBs: appliedBs,
-      exchangeRate: rate ?? undefined,
-      paymentDate: entities.date ?? undefined,
+    const result = await this.allocator.apply(draft.companyId, {
+      clientId: client.id,
+      amount: entities.amount!,
+      currency: entities.currency === 'USD' ? 'USD' : 'VES',
+      exchangeRate: resolved.exchangeRate,
       accountId: resolved.ourAccountId!,
+      paymentDate: entities.date ?? undefined,
       reference: entities.reference ?? undefined,
       notes: `Comprobante ${entities.reference ?? ''}`.trim(),
     });
 
-    const lines = [
-      `✅ Cobro registrado en ${target.code ?? 'la venta'}`,
-      `${resolved.clientName ?? entities.counterparty} · ${formatUsd(applied)} (${formatBs(amountBs)})`,
-    ];
+    return { text: describeAllocation(result, client.name).join('\n') };
+  }
 
-    const stillOwed = round2(remaining - applied);
-    if (stillOwed > 0) lines.push(`Queda debiendo ${formatUsd(stillOwed)} en esa venta.`);
-    if (leftover > 0) {
-      lines.push(
-        `⚠️ Sobran ${formatUsd(leftover)} que no apliqué: exceden el saldo de esa venta. Aplícalos manualmente a otra.`,
-      );
-    }
+  /**
+   * Who paid: the client the user tapped, or the one the reader was sure of.
+   *
+   * Never creates one. A client made from how a bank spelled a name was a
+   * duplicate waiting to happen — and a brand-new client has no sale to pay
+   * anyway, so the payment could not have landed.
+   */
+  private async payer(
+    companyId: string,
+    resolved: DraftResolved,
+    chosenClientId?: string,
+  ): Promise<{ id: string; name: string }> {
+    const id = chosenClientId ?? resolved.clientId;
+    if (!id) throw new BadRequestException('Elige de qué cliente es este cobro');
 
-    return { text: lines.join('\n') };
+    const client = await this.prisma.client.findFirst({
+      where: { id, companyId },
+      select: { id: true, name: true },
+    });
+    if (!client) throw new NotFoundException('Ese cliente ya no existe');
+    return client;
   }
 
   /**
@@ -256,26 +240,6 @@ export class ReceiptExecutorService {
     });
 
     return { text: `✅ Traslado registrado por ${formatBs(entities.amount!)}` };
-  }
-
-  /** Creates the client only now — a discarded receipt leaves no trace. */
-  private async ensureClient(
-    companyId: string,
-    entities: DraftEntities,
-    resolved: DraftResolved,
-  ): Promise<string | null> {
-    if (resolved.clientId) return resolved.clientId;
-    if (!entities.counterparty) return null;
-
-    const created = await this.prisma.$transaction(async (tx) => {
-      const code = await this.sequenceService.next(companyId, 'client', tx);
-      return tx.client.create({
-        data: { companyId, code, name: entities.counterparty!.trim() },
-      });
-    });
-
-    this.logger.log(`Created client ${created.code} "${created.name}" from a receipt`);
-    return created.id;
   }
 }
 

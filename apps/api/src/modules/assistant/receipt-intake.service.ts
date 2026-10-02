@@ -2,10 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma } from '@prisma/client';
 import { ReceiptReaderService } from '../receipt-ocr/receipt-reader.service';
+import type { ReceiptFields } from '../receipt-ocr/patterns';
 import { MovementsService } from '../treasury/movements.service';
+import { AccountsService } from '../treasury/accounts.service';
 import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
 import { DirectionResolver } from './resolvers/direction.resolver';
-import { ClientResolver } from './resolvers/client.resolver';
+import { ClientResolver, CONFIDENT_MATCH, type ClientResolution } from './resolvers/client.resolver';
 import { DraftService } from './drafts/draft.service';
 import { SummaryFormatter } from './formatting/summary.formatter';
 import { PayablesService } from '../payables/payables.service';
@@ -13,7 +15,9 @@ import { todayIn } from './formatting/number.format';
 import type { IntakeOutcome } from './queue/receipt-queue.service';
 import {
   DRAFT_INTENT,
+  type MoneyDirection,
   type OutgoingMessage,
+  type ReceiptField,
   type ResolvedReceipt,
 } from './types/assistant.types';
 
@@ -52,6 +56,7 @@ export class ReceiptIntakeService {
     private readonly directions: DirectionResolver,
     private readonly clients: ClientResolver,
     private readonly movements: MovementsService,
+    private readonly accounts: AccountsService,
     private readonly exchangeRates: ExchangeRatesService,
     private readonly drafts: DraftService,
     private readonly formatter: SummaryFormatter,
@@ -73,29 +78,41 @@ export class ReceiptIntakeService {
     const read = await this.reader.read(params.image, today);
     const { fields } = read;
 
-    const [direction, rate] = await Promise.all([
+    const [direction, current, past] = await Promise.all([
       this.directions.resolve(params.companyId, fields.originAccount, fields.destinationAccount),
       this.exchangeRates.getCurrentRate(params.companyId, {
         scrapeTimeoutMs: RECEIPT_RATE_TIMEOUT_MS,
       }),
+      fields.date && fields.date < todayIso
+        ? this.exchangeRates.getRateForDate(fields.date)
+        : Promise.resolve(null),
     ]);
+
+    // A transfer from an earlier day moved bolivares at that day's rate, and
+    // that is the rate its dollars have to be worked out with. Only for a
+    // company on the official rate: a custom one says to ignore the BCV.
+    const rate =
+      past && current.source === 'bcv'
+        ? { ...current, bcvRate: past.rate, effectiveRate: past.rate, rateDate: past.rateDate, stale: false, unavailable: false }
+        : current;
 
     const warnings: string[] = [];
     if (read.tier === 'ai_image') warnings.push('Leído con el respaldo de imagen');
-    if (read.tier === 'failed') warnings.push('No se pudo leer el comprobante completo');
     if (rate.unavailable) warnings.push('Sin tasa BCV disponible: muestro solo el monto original');
 
     // The counterparty only becomes a client when money came in; on an outgoing
     // payment they are a supplier, which this system does not model as a client.
-    let clientResolution = null;
+    let clientResolution: ClientResolution | null = null;
     if (direction.direction === 'in' && fields.counterparty) {
       clientResolution = await this.clients.resolve(params.companyId, fields.counterparty);
-      warnings.push(...clientResolution.warnings);
+      warnings.push(...clientResolution.warnings.filter((warning) => !warning.startsWith('Cliente nuevo')));
     }
 
     const duplicate = fields.reference
       ? await this.movements.findByReference(params.companyId, fields.reference)
       : null;
+
+    const awaiting = awaitingFields(fields, direction.direction);
 
     const receipt: ResolvedReceipt = {
       fields,
@@ -113,42 +130,35 @@ export class ReceiptIntakeService {
             accountName: duplicate.account.name,
           }
         : null,
+      awaiting,
+      client: direction.direction === 'in' ? { confident: isConfident(clientResolution) } : undefined,
     };
 
-    // A duplicate, an unreadable field or an unknown account all end the same
-    // way: report and stop. Creating a draft there would let the user confirm
-    // something we cannot execute.
-    const cannotProceed =
-      receipt.duplicateOf !== null ||
-      receipt.missing.length > 0 ||
-      direction.direction === 'unknown';
-
-    if (cannotProceed) {
-      if (receipt.duplicateOf) {
-        this.logger.log(`Receipt ${fields.reference} already booked — no draft created`);
-      }
-      const outcome: IntakeOutcome = receipt.duplicateOf
-        ? { kind: 'duplicate', reference: fields.reference }
-        : read.missing.length > 0
-          ? { kind: 'unreadable', missing: read.missing }
-          : { kind: 'unknown_account' };
-
+    // A duplicate is the one thing that ends here: it is already on the books,
+    // and asking anything about it would only invite booking it twice. What the
+    // reader could not see — a field, or which account is ours — is asked
+    // instead of turning the whole receipt away. It used to be rejected, and
+    // with only the free reader that happened often enough to matter.
+    if (receipt.duplicateOf) {
+      this.logger.log(`Receipt ${fields.reference} already booked — no draft created`);
       return {
         receipt,
         draftId: null,
-        outcome,
+        outcome: { kind: 'duplicate', reference: fields.reference },
         reply: this.formatter.format(receipt, 'none', todayIso),
       };
     }
 
-    // Only an outgoing payment can settle something we owe, so the lookup is
-    // skipped entirely for money coming in. Run alongside the draft write
-    // rather than after it: the two are independent, and queueing them cost a
-    // round trip on every single receipt.
+    // Only a complete outgoing payment can be matched to what we owe, and only a
+    // receipt whose account is unknown needs the account list. Run alongside
+    // the draft write rather than after it: the lookups are independent of it.
     const openPayablesPromise =
-      direction.direction === 'out'
+      direction.direction === 'out' && awaiting.length === 0
         ? this.payables.listOpen(params.companyId)
         : Promise.resolve([]);
+    const accountsPromise = awaiting.includes('account')
+      ? this.accounts.findAll(params.companyId)
+      : Promise.resolve([]);
 
     const draftPromise = this.drafts.create({
       companyId: params.companyId,
@@ -160,7 +170,9 @@ export class ReceiptIntakeService {
           ? DRAFT_INTENT.RECEIPT_IN
           : direction.direction === 'out'
             ? DRAFT_INTENT.RECEIPT_OUT
-            : DRAFT_INTENT.RECEIPT_INTERNAL,
+            : direction.direction === 'internal'
+              ? DRAFT_INTENT.RECEIPT_INTERNAL
+              : DRAFT_INTENT.RECEIPT_INCOMPLETE,
       readerTier: read.tier,
       // Keeping the raw read on the draft is what makes a wrong entry
       // diagnosable later; it cannot be reconstructed after the fact.
@@ -190,23 +202,57 @@ export class ReceiptIntakeService {
         counterAccountName: direction.counterAccountName,
         counterAccountId: direction.counterAccountId,
         exchangeRate: receipt.exchangeRate,
+        exchangeRateStale: receipt.exchangeRateStale,
         clientId: clientResolution?.match?.id ?? null,
         clientName: clientResolution?.match?.name ?? null,
         clientIsNew: clientResolution?.isNew ?? false,
         alternativeClientId: clientResolution?.alternative?.id ?? null,
+        clientConfident: isConfident(clientResolution),
+        awaiting,
       } as Prisma.InputJsonValue,
       warnings,
     });
 
-    // Awaited together so a failing draft write cannot leave the payables
-    // lookup dangling as an unhandled rejection.
-    const [draft, openPayables] = await Promise.all([draftPromise, openPayablesPromise]);
+    // Awaited together so a failing draft write cannot leave a lookup dangling
+    // as an unhandled rejection.
+    const [draft, openPayables, accounts] = await Promise.all([
+      draftPromise,
+      openPayablesPromise,
+      accountsPromise,
+    ]);
 
     return {
       receipt,
       draftId: draft.id,
       outcome: { kind: 'queued', draftId: draft.id },
-      reply: this.formatter.format(receipt, draft.id, todayIso, undefined, openPayables),
+      reply: this.formatter.format(
+        receipt,
+        draft.id,
+        todayIso,
+        undefined,
+        openPayables,
+        accounts.map((account) => ({ id: account.id, name: account.name, currency: account.currency })),
+      ),
     };
   }
+}
+
+/** What has to be asked before the receipt can be classified, first question first. */
+function awaitingFields(fields: ReceiptFields, direction: MoneyDirection): ReceiptField[] {
+  const awaiting: ReceiptField[] = [];
+  if (fields.amount === null) awaiting.push('amount');
+  if (!fields.date) awaiting.push('date');
+  if (!fields.reference) awaiting.push('reference');
+  if (direction === 'unknown') awaiting.push('direction', 'account');
+  return awaiting;
+}
+
+/**
+ * Sure enough to apply a payment to this client without asking.
+ *
+ * A close runner-up is doubt too: two Josés on the books must not be decided by
+ * how the bank happened to spell one of them.
+ */
+function isConfident(resolution: ClientResolution | null): boolean {
+  return Boolean(resolution?.match && resolution.match.score >= CONFIDENT_MATCH && !resolution.alternative);
 }

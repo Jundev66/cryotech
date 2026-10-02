@@ -4,9 +4,10 @@ import type { BotDraft } from '@prisma/client';
 import { DraftService } from '../drafts/draft.service';
 import { SummaryFormatter } from '../formatting/summary.formatter';
 import { PayablesService } from '../../payables/payables.service';
+import { AccountsService } from '../../treasury/accounts.service';
 import { todayIn } from '../formatting/number.format';
 import type { ReceiptFields } from '../../receipt-ocr/patterns';
-import type { OutgoingMessage, ResolvedReceipt } from '../types/assistant.types';
+import type { OutgoingMessage, ReceiptField, ResolvedReceipt } from '../types/assistant.types';
 
 const DEFAULT_TIMEZONE = 'America/Caracas';
 
@@ -31,6 +32,7 @@ export class ReceiptQueueService {
     private readonly drafts: DraftService,
     private readonly formatter: SummaryFormatter,
     private readonly payables: PayablesService,
+    private readonly accounts: AccountsService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -107,13 +109,16 @@ export class ReceiptQueueService {
     const [first] = pending;
     const timeZone = this.configService.get<string>('ASSISTANT_TIMEZONE') ?? DEFAULT_TIMEZONE;
     const receipt = rebuildReceipt(first);
+    const awaiting = receipt.awaiting ?? [];
 
     // Read fresh rather than stored on the draft: a receipt can sit in the queue
     // for days, and by then a payable it matched may already be settled.
-    const openPayables =
-      receipt.direction.direction === 'out'
-        ? await this.payables.listOpen(first.companyId)
-        : [];
+    const [openPayables, accounts] = await Promise.all([
+      receipt.direction.direction === 'out' && awaiting.length === 0
+        ? this.payables.listOpen(first.companyId)
+        : Promise.resolve([]),
+      awaiting.includes('account') ? this.accounts.findAll(first.companyId) : Promise.resolve([]),
+    ]);
 
     return this.formatter.format(
       receipt,
@@ -121,6 +126,15 @@ export class ReceiptQueueService {
       todayIn(timeZone),
       { index: 1, total: pending.length },
       openPayables,
+      // The receipt's currency first: bolivares booked into a dollar account is
+      // the mistake worth making the hardest to tap.
+      accounts
+        .map((account) => ({ id: account.id, name: account.name, currency: account.currency }))
+        .sort(
+          (a, b) =>
+            Number(b.currency === (receipt.fields.currency ?? 'VES')) -
+            Number(a.currency === (receipt.fields.currency ?? 'VES')),
+        ),
     );
   }
 
@@ -132,6 +146,12 @@ export class ReceiptQueueService {
       ? '\n\nQueda 1 comprobante por clasificar.'
       : `\n\nQuedan ${remaining} comprobantes por clasificar.`;
   }
+}
+
+/** The questions still open on a draft, in the order they are asked. */
+export function awaitingOf(draft: BotDraft): ReceiptField[] {
+  const resolved = (draft.resolved ?? {}) as Record<string, unknown>;
+  return Array.isArray(resolved.awaiting) ? (resolved.awaiting as ReceiptField[]) : [];
 }
 
 /**
@@ -158,10 +178,12 @@ export function rebuildReceipt(draft: BotDraft): ResolvedReceipt {
     bankName: (entities.bankName as string) ?? null,
   };
 
+  const direction = (resolved.direction as ResolvedReceipt['direction']['direction']) ?? 'unknown';
+
   return {
     fields,
     direction: {
-      direction: (resolved.direction as ResolvedReceipt['direction']['direction']) ?? 'unknown',
+      direction,
       ourAccountId: (resolved.ourAccountId as string) ?? null,
       ourAccountName: (resolved.ourAccountName as string) ?? null,
       counterAccountId: (resolved.counterAccountId as string) ?? null,
@@ -169,10 +191,24 @@ export function rebuildReceipt(draft: BotDraft): ResolvedReceipt {
     },
     tier: (draft.readerTier as ResolvedReceipt['tier']) ?? 'ocr',
     exchangeRate: (resolved.exchangeRate as number) ?? null,
-    exchangeRateStale: false,
+    // Kept on the draft since receipts can wait days in the queue: re-rendered
+    // without it, yesterday's rate read as current.
+    exchangeRateStale: Boolean(resolved.exchangeRateStale),
     warnings,
     missing: [],
     duplicateOf: null,
+    awaiting: awaitingOf(draft),
+    // Drafts from before the flag existed count as sure when they had a match,
+    // which is how they were treated when they were read.
+    client:
+      direction === 'in'
+        ? {
+            confident:
+              resolved.clientConfident === undefined
+                ? Boolean(resolved.clientId)
+                : Boolean(resolved.clientConfident),
+          }
+        : undefined,
   };
 }
 

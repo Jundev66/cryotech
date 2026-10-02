@@ -31,14 +31,21 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Progress } from '@/components/ui/progress';
-import { Plus, Loader2, DollarSign, ShoppingCart, Trash2 } from 'lucide-react';
+import { Plus, Loader2, DollarSign, ShoppingCart, Trash2, Undo2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { SearchInput } from '@/components/ui/search-input';
 import { useListSearch } from '@/hooks/use-list-search';
 import { ClientCombobox } from '@/components/forms/client-combobox';
 import { BulkSaleDialog } from '@/components/forms/bulk-sale-dialog';
 import { apiMessage } from '@/lib/api-error';
+import { todayLocalIso } from '@/lib/dates';
 import { toast } from 'sonner';
+
+/** Past its due date and still owing. A sale is due through the whole of that day. */
+function isOverdue(sale: Sale): boolean {
+  if (!sale.dueDate || sale.paymentStatus === 'paid') return false;
+  return sale.dueDate.slice(0, 10) < todayLocalIso();
+}
 
 export default function SalesPage() {
   const queryClient = useQueryClient();
@@ -80,7 +87,7 @@ export default function SalesPage() {
   const createMutation = useMutation({
     mutationFn: (data: SaleInput) => salesApi.create({
       ...data,
-      saleDate: new Date().toISOString().split('T')[0],
+      saleDate: todayLocalIso(),
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales'] });
@@ -100,18 +107,42 @@ export default function SalesPage() {
     onError: (error) => toast.error(apiMessage(error, 'Error al eliminar venta')),
   });
 
+  const refreshSelected = () => {
+    queryClient.invalidateQueries({ queryKey: ['sales'] });
+    queryClient.invalidateQueries({ queryKey: ['sale-payments', selectedSale?.id] });
+    queryClient.invalidateQueries({ queryKey: ['treasury'] });
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    // Refresh the selected sale data
+    salesApi.findOne(selectedSale!.id).then((updated) => setSelectedSale(updated));
+  };
+
   const paymentMutation = useMutation({
     mutationFn: (data: SalePaymentInput) => salesApi.registerPayment(selectedSale!.id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-      queryClient.invalidateQueries({ queryKey: ['sale-payments', selectedSale?.id] });
+      refreshSelected();
       toast.success('Cobro registrado');
-      paymentForm.reset();
-      // Refresh the selected sale data
-      salesApi.findOne(selectedSale!.id).then((updated) => setSelectedSale(updated));
+      paymentForm.reset({ amount: 0, paymentDate: todayLocalIso(), notes: '' });
     },
     onError: (error) => toast.error(apiMessage(error, 'Error al registrar cobro')),
   });
+
+  // A payment recorded against the wrong sale, or twice, used to be permanent.
+  const voidPaymentMutation = useMutation({
+    mutationFn: (paymentId: string) => salesApi.voidPayment(selectedSale!.id, paymentId),
+    onSuccess: () => {
+      refreshSelected();
+      toast.success('Cobro anulado');
+    },
+    onError: (error) => toast.error(apiMessage(error, 'No se pudo anular el cobro')),
+  });
+
+  function confirmVoidPayment(paymentId: string, amount: number) {
+    const ok = window.confirm(
+      `¿Anular el cobro de ${formatUsd(amount)}?\n\n` +
+        'La venta vuelve a quedar debiendo ese monto y se descuenta del saldo de la cuenta. No se puede deshacer.',
+    );
+    if (ok) voidPaymentMutation.mutate(paymentId);
+  }
 
   const form = useForm<SaleInput>({
     resolver: zodResolver(saleSchema),
@@ -133,7 +164,7 @@ export default function SalesPage() {
     resolver: zodResolver(salePaymentSchema),
     defaultValues: {
       amount: 0,
-      paymentDate: new Date().toISOString().split('T')[0],
+      paymentDate: todayLocalIso(),
       notes: '',
     },
   });
@@ -293,6 +324,7 @@ export default function SalesPage() {
                   <TableHead>Cliente</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Estado Pago</TableHead>
+                  <TableHead>Vence</TableHead>
                   <TableHead className="text-right">Cantidad</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">Saldo Pendiente</TableHead>
@@ -311,6 +343,13 @@ export default function SalesPage() {
                       <Badge variant="outline" className={PAYMENT_STATUS_COLORS[sale.paymentStatus] || ''}>
                         {PAYMENT_STATUS_LABELS[sale.paymentStatus] || sale.paymentStatus}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {sale.dueDate ? (
+                        <span className={isOverdue(sale) ? 'font-medium text-red-600' : undefined} data-testid="sale-due">
+                          {formatDate(sale.dueDate)}{isOverdue(sale) ? ' · vencida' : ''}
+                        </span>
+                      ) : '-'}
                     </TableCell>
                     <TableCell className="text-right">{formatNumber(sale.quantity)}</TableCell>
                     <TableCell className="text-right font-medium">{formatUsd(sale.totalAmount)}</TableCell>
@@ -382,7 +421,9 @@ export default function SalesPage() {
                   {selectedSale.dueDate && (
                     <div className="col-span-2">
                       <span className="text-muted-foreground">Vencimiento:</span>
-                      <p className="font-medium">{formatDate(selectedSale.dueDate)}</p>
+                      <p className={isOverdue(selectedSale) ? 'font-medium text-red-600' : 'font-medium'}>
+                        {formatDate(selectedSale.dueDate)}{isOverdue(selectedSale) ? ' · vencida' : ''}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -420,6 +461,16 @@ export default function SalesPage() {
                           <p className="text-xs text-muted-foreground">{formatDate(payment.paymentDate)}</p>
                           {payment.notes && <p className="text-xs text-muted-foreground">{payment.notes}</p>}
                         </div>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          title="Anular cobro"
+                          data-testid="payment-void"
+                          disabled={voidPaymentMutation.isPending}
+                          onClick={() => confirmVoidPayment(payment.id, Number(payment.amount))}
+                        >
+                          <Undo2 className="h-3 w-3" />
+                        </Button>
                       </div>
                     ))}
                   </div>

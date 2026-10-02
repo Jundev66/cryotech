@@ -9,8 +9,11 @@ export const salesApi = {
   createMany: (data: BulkSaleInput) => api.post<Sale[]>('/sales/bulk', data).then(r => r.data),
   update: (id: string, data: Partial<Sale>) => api.patch<Sale>(`/sales/${id}`, data).then(r => r.data),
   remove: (id: string) => api.delete(`/sales/${id}`).then(r => r.data),
-  registerPayment: (saleId: string, data: { amount: number; amountBs?: number; exchangeRate?: number; paymentDate?: string; notes?: string }) =>
+  registerPayment: (saleId: string, data: { amount: number; amountBs?: number; exchangeRate?: number; paymentDate?: string; accountId?: string; notes?: string }) =>
     api.post<SalePayment>(`/sales/${saleId}/payments`, data).then(r => r.data),
   getPayments: (saleId: string) =>
     api.get<SalePayment[]>(`/sales/${saleId}/payments`).then(r => r.data),
+  /** Undoes one payment: its income, its treasury movement and the sale's balance. */
+  voidPayment: (saleId: string, paymentId: string) =>
+    api.delete<{ success: boolean }>(`/sales/${saleId}/payments/${paymentId}`).then(r => r.data),
 };

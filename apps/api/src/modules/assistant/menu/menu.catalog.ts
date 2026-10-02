@@ -16,10 +16,13 @@ export const MENU_OPERATIONS = [
     title: '💰 Cobrar una venta',
     description: 'Ver quién debe y aplicar un pago',
   },
+  // A cash expense had no home: "Pagar" only settled purchases and slaughters,
+  // and every other cost needed a screenshot. Both live behind this one row so
+  // the menu stays at ten.
   {
     key: 'pay',
-    title: '💳 Pagar algo pendiente',
-    description: 'Compras y beneficios por pagar',
+    title: '💸 Pagos y gastos',
+    description: 'Gasto rápido y lo que debes',
   },
   {
     key: 'sale',

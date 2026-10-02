@@ -40,19 +40,19 @@ export class ProcessingService {
     const batch = await this.prisma.batch.findFirst({
       where: { id: input.batchId, companyId },
     });
-    if (!batch) throw new NotFoundException('Batch not found in this company');
+    if (!batch) throw new NotFoundException('Lote no encontrado en esta empresa');
 
     // Validate batch status must be 'for_sale'
     if (batch.status !== 'for_sale') {
       throw new BadRequestException(
-        `Batch status must be 'for_sale' to process. Current status: '${batch.status}'`,
+        `El lote debe estar en estado "en venta" para beneficiar. Estado actual: '${batch.status}'`,
       );
     }
 
     // Validate quantity does not exceed current batch quantity
     if (input.quantity > batch.currentQuantity) {
       throw new BadRequestException(
-        `Processing quantity (${input.quantity}) exceeds current batch quantity (${batch.currentQuantity})`,
+        `La cantidad a beneficiar (${input.quantity}) excede la cantidad actual del lote (${batch.currentQuantity})`,
       );
     }
 

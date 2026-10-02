@@ -1,11 +1,18 @@
-# Render Blueprint — la forma desplegada de la API, en el repo y no en un panel
+# Render Blueprint — la forma desplegada de CryoTech, en el repo y no en un panel
 # que nadie puede diferenciar entre dos versiones.
 #
 # Este archivo no lleva ni una credencial. `sync: false` declara que la variable
 # existe pero le dice a Render que conserve el valor que ya tenga y que no lo
-# lea de aquí, así que los secretos se cargan una vez por API o por el panel y
-# nunca pasan por git. `generateValue: true` va un paso más allá: Render inventa
-# el valor al crear el servicio y nadie llega a verlo ni a copiarlo.
+# lea de aquí, así que los secretos se cargan una vez por el panel y nunca pasan
+# por git. `generateValue: true` va un paso más allá: Render inventa el valor al
+# crear el servicio y nadie llega a verlo ni a copiarlo.
+#
+# Todo en plan gratuito: la API (Docker), la web (sitio estático) y la base en
+# Neon. Canal: Telegram. Comprobantes: solo Tesseract, sin IA de pago.
+#
+# Los nombres de servicio son también su subdominio en onrender.com. Si Render
+# asigna otro porque ese ya está tomado, hay que corregir dos cosas a mano: el
+# destino del rewrite /api/* de la web y CORS_ORIGIN de la API.
 
 services:
   - type: web
@@ -34,6 +41,11 @@ services:
       # depender de que Render adivine el puerto.
       - key: PORT
         value: 3001
+      # El proceso corre en UTC por defecto, y la tasa del BCV se guarda por
+      # "hoy" a medianoche local: de 8 pm a medianoche de Caracas eso ya era
+      # mañana. Con la zona de la granja, el día del servidor es el de la granja.
+      - key: TZ
+        value: America/Caracas
 
       # Generados por Render: nunca existen fuera de este servicio, así que no
       # hay nada que filtrar por chat ni que rotar a mano. El validador exige
@@ -44,40 +56,20 @@ services:
       - key: JWT_REFRESH_SECRET
         generateValue: true
 
-      # Sin web desplegada todavía, CORS no protege nada — pero el validador
-      # exige una URL completa, así que tiene que ser una de verdad. Cambia en
-      # la Fase 2, cuando la web viva en el dominio.
+      # La URL completa de la web (p. ej. https://cryotech-web.onrender.com).
+      # Desde el panel, porque depende del subdominio que Render asigne.
       - key: CORS_ORIGIN
-        value: http://localhost:3002
+        sync: false
 
-      # Explícito aunque NODE_ENV=production ya lo cerraría: esta es la única
-      # ruta que crea usuarios y empresas sin credenciales previas, y aquí la
-      # API está en internet abierto. Que el estado se lea en el blueprint, y
-      # no dependa de recordar cómo se comporta un default.
+      # Esta es la única ruta que crea usuarios y empresas sin credenciales
+      # previas, y aquí la API está en internet abierto. Para dar de alta al
+      # dueño se pone en "true" desde el panel, se registra, y se vuelve a
+      # "false". Que el estado normal se lea en el blueprint.
       - key: REGISTRATION_ENABLED
-        value: "false"
-
-      # --- Cola de entrada ---
-      # `sync: false` y no un valor: la URL del Worker lleva el subdominio de la
-      # cuenta de Cloudflare, que es un identificador personal. Se pone una vez
-      # en el panel de Render y el blueprint no la vuelve a tocar.
-      - key: BUFFER_URL
-        sync: false
-      - key: BUFFER_POLL_SECONDS
-        value: 5
-      - key: BUFFER_PULL_TOKEN
-        sync: false
+        value: "true"
 
       # --- Base de datos (Neon) ---
       - key: DATABASE_URL
-        sync: false
-
-      # --- Meta / WhatsApp ---
-      - key: META_GRAPH_VERSION
-        value: v21.0
-      - key: META_WHATSAPP_TOKEN
-        sync: false
-      - key: META_WHATSAPP_PHONE_ID
         sync: false
 
       # --- Telegram ---
@@ -92,10 +84,19 @@ services:
       # --- Asistente ---
       - key: ASSISTANT_TIMEZONE
         value: America/Caracas
+      # Tres días: un comprobante puede esperar en la cola a que haya tiempo
+      # de clasificarlo, y a los 30 minutos de antes se perdía sin avisar.
       - key: ASSISTANT_DRAFT_TTL_MINUTES
-        value: 60
+        value: 4320
       - key: ASSISTANT_FLOW_TTL_MINUTES
         value: 60
+      # Plazo de una venta fiada. Sin fecha de vencimiento una venta nunca
+      # vence, y los recordatorios no tienen de qué avisar.
+      - key: ASSISTANT_DEFAULT_CREDIT_DAYS
+        value: 7
+      # Resumen diario (7 pm) y semanal (lunes 7 am) por Telegram.
+      - key: ASSISTANT_DIGEST_ENABLED
+        value: "true"
       # Los booleanos van entrecomillados en todo este archivo. Sin comillas,
       # YAML los convierte en booleanos de verdad, y al pasarlos a texto salen
       # como "False" y "True" con mayúscula. El código compara contra 'true' y
@@ -107,27 +108,28 @@ services:
         value: "false"
       - key: ASSISTANT_COMPANY_ID
         sync: false
-      - key: ASSISTANT_ALLOWED_PHONES
-        sync: false
+      # Ids numéricos separados por coma; los da @userinfobot.
       - key: ASSISTANT_ALLOWED_TELEGRAM_IDS
         sync: false
 
       # --- Lectura de comprobantes ---
+      # La IA es opcional. Con ANTHROPIC_API_KEY vacía solo lee Tesseract, sin
+      # costo y sin intentar llamadas; con una clave, el respaldo con Claude se
+      # activa solo. Para apagarlo teniendo clave: OCR_FALLBACK_ENABLED="false"
+      # desde el panel.
       - key: OCR_LANG
         value: spa
-      - key: OCR_FALLBACK_ENABLED
-        value: "true"
-      - key: ANTHROPIC_MODEL
-        value: claude-haiku-4-5
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-4-5
 
       # --- Tasa del BCV ---
       # Apunta al proxy del Worker, no a bcv.org.ve: Node no puede verificar la
       # cadena de certificado del BCV y BCV_ALLOW_INSECURE_TLS está prohibida
       # bajo NODE_ENV=production. Por eso no aparece aquí: se queda en su
       # valor por defecto, 'false'.
-      # El mismo Worker con /bcv al final; también desde el panel.
+      # El Worker con /bcv al final; también desde el panel.
       - key: BCV_URL
         sync: false
       - key: BCV_TIMEOUT_MS
@@ -138,3 +140,60 @@ services:
       # --- Formularios nativos de WhatsApp ---
       - key: WHATSAPP_FLOWS_ENABLED
         value: "false"
+
+  # La web: la SPA de Vite servida como sitio estático gratuito. No es Docker ni
+  # nginx, así que lo que hacía nginx.conf se declara aquí: el fallback de la
+  # SPA, el proxy de /api y las cabeceras de seguridad.
+  - type: web
+    name: cryotech-web
+    runtime: static
+    # pnpm por npx y fijado a la versión del lockfile: el build de un sitio
+    # estático no trae pnpm, y otra versión rechaza el lockfile congelado.
+    buildCommand: >-
+      npx --yes pnpm@9.15.0 install --frozen-lockfile --filter "@cryotech/web..." &&
+      npx --yes pnpm@9.15.0 --filter @cryotech/shared-types build &&
+      npx --yes pnpm@9.15.0 --filter @cryotech/web build
+    staticPublishPath: ./apps/web/dist
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+    routes:
+      # El cliente llama a /api en su mismo origen (src/api/client.ts), así que
+      # la web reenvía esas rutas a la API. Para el navegador todo es un solo
+      # origen: la CSP puede seguir en connect-src 'self'.
+      # Sustituir por la URL real de la API si Render le asignó otro subdominio
+      # (se ve en el panel del servicio cryotech-api).
+      - type: rewrite
+        source: /api/*
+        destination: https://cryotech-api.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      # Las mismas de apps/web/nginx.conf, que explica cada una. La sesión vive
+      # en localStorage: un XSS no es un defacement, es una sesión robada.
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000; includeSubDomains
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=(), payment=()
+      - path: /*
+        name: Cross-Origin-Opener-Policy
+        value: same-origin
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable

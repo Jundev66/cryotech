@@ -6,18 +6,19 @@ compatibility_date = "2026-01-01"
 # horario. Estos disparos hacen otras dos cosas:
 #
 #   0 4 * * *      limpieza de filas ya confirmadas
-#   0 13 * * 1-5   despertar la API antes de su refresco de tasa de las 9:05
-#   55 17 * * 1-5  ídem, antes del de las 14:00
+#   */10 * * * *   mantener la API despierta
 #
-# Los dos últimos existen porque el cron que trae la tasa del BCV vive dentro
-# del proceso de la API (@nestjs/schedule), y en el plan gratuito de Render la
-# instancia duerme a los quince minutos sin tráfico: a las 9:05 no hay proceso
-# que lo ejecute. El Worker sí está siempre despierto, así que la despierta unos
-# minutos antes y el cron de la API se dispara con ella viva. De lunes a viernes
-# porque el BCV no publica los fines de semana — el sábado la tasa buena es la
-# del viernes. Las horas van en UTC; Caracas es UTC-4.
+# Los crons de la API viven dentro de su proceso (@nestjs/schedule): la tasa del
+# BCV, el resumen diario de las 7 pm, el semanal del lunes y la limpieza de
+# borradores. En el plan gratuito de Render la instancia duerme a los quince
+# minutos sin tráfico, y dormida no hay proceso que los ejecute. Antes solo se
+# la despertaba minutos antes de cada refresco de tasa; con los resúmenes eso ya
+# no alcanza, y un mensaje de Telegram a una instancia dormida espera medio
+# minuto de arranque en frío. Un ping cada diez minutos la mantiene viva 24/7,
+# y una sola instancia entra en las 750 horas gratuitas del mes.
+# Las horas van en UTC; Caracas es UTC-4.
 [triggers]
-crons = ["0 4 * * *", "0 13 * * 1-5", "55 17 * * 1-5"]
+crons = ["0 4 * * *", "*/10 * * * *"]
 
 [vars]
 # La API corre en una instancia gratuita de Render, que se duerme a los quince
@@ -25,12 +26,17 @@ crons = ["0 4 * * *", "0 13 * * 1-5", "55 17 * * 1-5"]
 # nunca puede despertarse sola: este Worker le pega un ping al recibir un
 # mensaje. No es un secreto — es una URL pública protegida por lo que hay
 # detrás — así que vive aquí y no en `wrangler secret`.
-API_WAKE_URL = "https://cryotech-api.onrender.com/api/health"
+#
+# Se completa al desplegar con la URL de TU API en Render (la que asigne a
+# `cryotech-api`), terminada en /api/health. Vacía, el Worker no despierta nada.
+API_WAKE_URL = ""
 
 [[d1_databases]]
 binding = "DB"
 database_name = "cryotech-webhook-buffer"
-database_id = "df4ce963-9303-4dd8-a2b8-de0c7bcb5a78"
+# Se completa con el id que imprime `pnpm db:create` en tu cuenta de Cloudflare.
+# El que había aquí era la base del dueño anterior del proyecto.
+database_id = ""
 
 # Secrets are set with `wrangler secret put`, never committed:
 #   META_APP_SECRET             (from the Meta app: Settings > Basic > App Secret)

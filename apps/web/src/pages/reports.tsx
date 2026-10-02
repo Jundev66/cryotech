@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PageHeader } from '@/components/layout/page-header';
-import { DollarSign, TrendingUp } from 'lucide-react';
+import { DollarSign, TrendingUp, Users, Scale } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, AreaChart, Area,
@@ -42,6 +42,10 @@ export default function ReportsPage() {
   const { data: profitability, isLoading: profitLoading } = useQuery({
     queryKey: ['reports', 'batch-profitability'],
     queryFn: reportsApi.getBatchProfitability,
+  });
+  const { data: receivables, isLoading: receivablesLoading } = useQuery({
+    queryKey: ['reports', 'receivables-by-client'],
+    queryFn: reportsApi.getReceivablesByClient,
   });
 
   return (
@@ -166,6 +170,137 @@ export default function ReportsPage() {
                 <BatchProfitabilityCard key={b.batchId} data={b} />
               ))}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cuentas por Cobrar & Deudores */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <CardTitle className="font-display flex items-center gap-2">
+                <Users className="h-5 w-5 text-amber-500" />
+                Cuentas por Cobrar & Clientes Deudores
+              </CardTitle>
+              <CardDescription>
+                Detalle de clientes con pagos pendientes por venta de pollos, kilos adeudados y saldos
+              </CardDescription>
+            </div>
+            {receivables?.exchangeRate && (
+              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-900 border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 w-fit">
+                Tasa Oficial: {formatNumber(receivables.exchangeRate, 2)} Bs/$
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {receivablesLoading ? (
+            <div className="space-y-2">{[1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+          ) : !receivables || receivables.clients.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-8 text-center">
+              <p className="text-muted-foreground font-medium">🎉 ¡Excelente! No hay cuentas por cobrar ni deudas pendientes registradas.</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary KPIs */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-lg border p-3 bg-muted/20">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                    Total Deuda (USD)
+                  </div>
+                  <div className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">
+                    {formatUsd(receivables.totals.owedUsd)}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3 bg-muted/20">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Scale className="h-3.5 w-3.5 text-muted-foreground" />
+                    Kilos por Cobrar
+                  </div>
+                  <div className="text-xl font-bold mt-1">
+                    {formatNumber(receivables.totals.unpaidKg ?? 0, 2)} kg
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3 bg-muted/20">
+                  <div className="text-xs text-muted-foreground">Total Deuda (Bs)</div>
+                  <div className="text-xl font-bold text-slate-800 dark:text-slate-200 mt-1">
+                    {receivables.totals.owedBs ? formatCurrency(receivables.totals.owedBs) : '—'}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3 bg-muted/20">
+                  <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                    Clientes con Deuda
+                  </div>
+                  <div className="text-xl font-bold mt-1">
+                    {receivables.clients.length} cliente(s)
+                  </div>
+                </div>
+              </div>
+
+              {/* Debtors Table */}
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Teléfono</TableHead>
+                      <TableHead className="text-center">Ventas Pendientes</TableHead>
+                      <TableHead className="text-right">Kilos Adeudados</TableHead>
+                      <TableHead className="text-right">Antigüedad</TableHead>
+                      <TableHead className="text-right">Deuda (USD)</TableHead>
+                      <TableHead className="text-right">Deuda (Bs)</TableHead>
+                      <TableHead className="text-center">Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {receivables.clients.map((c) => (
+                      <TableRow key={c.clientId || c.clientName}>
+                        <TableCell className="font-semibold text-foreground">
+                          {c.clientName}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {c.phone || '—'}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary" className="font-mono text-xs">
+                            {c.salesCount} venta(s)
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatNumber(c.unpaidKg ?? 0, 2)} kg
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {c.daysSinceOldest ? `${c.daysSinceOldest} días` : 'Hoy'}
+                        </TableCell>
+                        <TableCell className="text-right font-bold text-amber-600 dark:text-amber-400">
+                          {formatUsd(c.owedUsd)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium text-slate-700 dark:text-slate-300">
+                          {c.owedBs ? formatCurrency(c.owedBs) : '—'}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {c.overdueCount > 0 ? (
+                            <Badge variant="destructive" className="text-xs">
+                              {c.overdueCount} vencida(s)
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 dark:text-amber-400">
+                              Pendiente
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

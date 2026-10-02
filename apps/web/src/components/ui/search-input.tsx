@@ -16,6 +16,7 @@ interface SearchInputProps {
   label?: string;
   className?: string;
   autoFocus?: boolean;
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
   'data-testid'?: string;
 }
 
@@ -32,6 +33,7 @@ export function SearchInput({
   label = 'Buscar',
   className,
   autoFocus,
+  onKeyDown,
   'data-testid': testId,
 }: SearchInputProps) {
   return (
@@ -43,6 +45,7 @@ export function SearchInput({
         value={value}
         autoFocus={autoFocus}
         onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         aria-label={label}
         data-testid={testId}

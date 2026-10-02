@@ -23,6 +23,9 @@ interface FetchedRate {
   stale: boolean;
 }
 
+/** How far back a day's rate may come from: a long weekend plus a holiday. */
+const RATE_LOOKBACK_DAYS = 5;
+
 @Injectable()
 export class ExchangeRatesService {
   private readonly logger = new Logger(ExchangeRatesService.name);
@@ -174,6 +177,29 @@ export class ExchangeRatesService {
       rateDate: rates.rateDate,
       ...(rates.stale ? { stale: true } : {}),
     };
+  }
+
+  /**
+   * The official rate that was in force on a given day, from the cache.
+   *
+   * A transfer made on Friday and photographed on Monday moved bolivares at
+   * Friday's rate; converting it at Monday's changes the dollars applied to the
+   * sale. The BCV does not publish on weekends or holidays, so the latest rate
+   * on or before the day counts — but only within a few days of it. Beyond that
+   * the cache simply has a gap, and null lets the caller use today's instead.
+   */
+  async getRateForDate(isoDate: string): Promise<{ rate: number; rateDate: Date } | null> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
+
+    // `rate_date` is a DATE column: UTC midnight is that calendar day exactly.
+    const day = new Date(`${isoDate}T00:00:00.000Z`);
+    const earliest = new Date(day.getTime() - RATE_LOOKBACK_DAYS * 86_400_000);
+
+    const row = await this.prisma.exchangeRate.findFirst({
+      where: { rateDate: { lte: day, gte: earliest } },
+      orderBy: { rateDate: 'desc' },
+    });
+    return row ? { rate: Number(row.bcvRate), rateDate: row.rateDate } : null;
   }
 
   /**

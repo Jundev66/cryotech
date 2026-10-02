@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SequenceService } from '../../common/services/sequence.service';
 import { ProcessedStockService } from '../../common/services/processed-stock.service';
@@ -14,11 +14,31 @@ import {
 } from '@cryotech/shared-types';
 import type {
   Prisma,
+  Sale,
   SaleType,
   PaymentStatus,
   TransactionType,
   TransactionCategory,
 } from '@prisma/client';
+
+/** One payment against a sale, as every caller describes it. */
+export interface SalePaymentWrite {
+  /** Dollars, like the sale's own total. */
+  amount: number;
+  amountBs?: number;
+  exchangeRate?: number;
+  paymentDate?: string;
+  accountId?: string;
+  reference?: string;
+  notes?: string;
+}
+
+/**
+ * Half a cent. Payments arrive rounded to cents while balances come from
+ * subtracting two decimals, so an exact comparison rejected paying off a sale
+ * in full over a stray 0.0000001.
+ */
+const CENT_TOLERANCE = 0.005;
 
 /** The relations every sale is returned with, single or bulk. */
 const SALE_INCLUDE = {
@@ -124,6 +144,24 @@ export class SalesService {
         await this.processedStock.decrement(tx, companyId, input.quantity);
       } else {
         await this.decrementBatchWithin(tx, input.batchId, input.quantity);
+      }
+
+      if (input.paymentStatus === 'paid') {
+        const currentRate = (await this.exchangeRates.getCurrentRate(companyId)).effectiveRate || null;
+        await this.writePayment(
+          tx,
+          companyId,
+          sale,
+          {
+            amount: Number(input.totalAmount),
+            amountBs: input.totalAmountBs,
+            exchangeRate: input.exchangeRate,
+            paymentDate: input.saleDate,
+          },
+          currentRate,
+        );
+        sale.paymentStatus = 'paid';
+        sale.paidAmount = input.totalAmount as unknown as Prisma.Decimal;
       }
 
       return sale;
@@ -294,122 +332,224 @@ export class SalesService {
     };
   }
 
-  async registerPayment(companyId: string, saleId: string, input: {
-    amount: number;
-    amountBs?: number;
-    exchangeRate?: number;
-    paymentDate?: string;
-    accountId?: string;
-    reference?: string;
-    notes?: string;
-  }) {
-    const sale = await this.prisma.sale.findFirst({
-      where: { id: saleId, companyId },
+  async registerPayment(companyId: string, saleId: string, input: SalePaymentWrite) {
+    const [payment] = await this.registerPayments(companyId, [{ ...input, saleId }]);
+    return payment;
+  }
+
+  async registerPaymentByClientOrSale(
+    companyId: string,
+    input: {
+      saleId?: string;
+      clientId?: string;
+      amount: number;
+      amountBs?: number;
+      exchangeRate?: number;
+      paymentDate?: string;
+      notes?: string;
+      accountId?: string;
+      reference?: string;
+    },
+  ) {
+    if (input.saleId) {
+      return this.registerPayment(companyId, input.saleId, input);
+    }
+    if (!input.clientId) {
+      throw new BadRequestException('Debe indicar una venta o un cliente para el cobro');
+    }
+
+    const pendingSales = await this.prisma.sale.findMany({
+      where: {
+        companyId,
+        clientId: input.clientId,
+        paymentStatus: { in: ['pending', 'partial'] },
+      },
+      orderBy: { saleDate: 'asc' },
     });
-    if (!sale) throw new NotFoundException('Venta no encontrada');
-    if (sale.paymentStatus === 'paid') {
-      throw new BadRequestException('Esta venta ya está completamente pagada');
+
+    if (pendingSales.length === 0) {
+      throw new BadRequestException('El cliente no tiene ventas pendientes de cobro');
     }
 
-    const remaining = Number(sale.totalAmount) - Number(sale.paidAmount);
-    if (input.amount > remaining) {
-      throw new BadRequestException(`El monto (${input.amount}) excede el saldo pendiente (${remaining})`);
+    let remainingAmount = input.amount;
+    const paymentsToApply: Array<SalePaymentWrite & { saleId: string }> = [];
+
+    for (const sale of pendingSales) {
+      if (remainingAmount <= 0) break;
+      const owed = Math.max(0, Number(sale.totalAmount) - Number(sale.paidAmount));
+      if (owed <= 0) continue;
+      const toApply = Number(Math.min(remainingAmount, owed).toFixed(2));
+      const splitAmountBs = input.amountBs && input.amount > 0
+        ? Math.round(((input.amountBs * toApply) / input.amount) * 100) / 100
+        : undefined;
+      paymentsToApply.push({
+        saleId: sale.id,
+        amount: toApply,
+        amountBs: splitAmountBs,
+        exchangeRate: input.exchangeRate,
+        paymentDate: input.paymentDate,
+        notes: input.notes,
+        accountId: input.accountId,
+        reference: input.reference,
+      });
+      remainingAmount = Number((remainingAmount - toApply).toFixed(2));
     }
 
-    const newPaidAmount = Number(sale.paidAmount) + input.amount;
-    const newStatus = newPaidAmount >= Number(sale.totalAmount) ? 'paid' : 'partial';
+    return this.registerPayments(companyId, paymentsToApply);
+  }
 
-    const txCategory: TransactionCategory = sale.saleType === 'live' ? 'sale_live' : 'sale_dead';
+  /**
+   * Several payments, all or nothing.
+   *
+   * One amount spread over a client's sales is a single act. Written one sale
+   * at a time, a failure halfway would leave the first sale paid and the next
+   * still owing, with the money already counted in the account.
+   */
+  async registerPayments(companyId: string, payments: Array<SalePaymentWrite & { saleId: string }>) {
+    if (payments.length === 0) return [];
+
+    const saleIds = [...new Set(payments.map((payment) => payment.saleId))];
+    if (saleIds.length !== payments.length) {
+      throw new BadRequestException('Una venta aparece dos veces en el mismo cobro');
+    }
+
+    const sales = await this.prisma.sale.findMany({ where: { id: { in: saleIds }, companyId } });
+    const byId = new Map(sales.map((sale) => [sale.id, sale]));
+
+    for (const payment of payments) {
+      const sale = byId.get(payment.saleId);
+      if (!sale) throw new NotFoundException('Venta no encontrada');
+      if (sale.paymentStatus === 'paid') {
+        throw new BadRequestException(`La venta ${sale.code ?? ''} ya está completamente pagada`.replace('  ', ' '));
+      }
+
+      const remaining = Number(sale.totalAmount) - Number(sale.paidAmount);
+      // Half a cent of slack: amounts arrive rounded to cents, balances are
+      // derived from two decimals that do not always subtract cleanly.
+      if (payment.amount > remaining + CENT_TOLERANCE) {
+        throw new BadRequestException(`El monto (${payment.amount}) excede el saldo pendiente (${remaining})`);
+      }
+    }
 
     // `transactions.amount` is read as bolivares everywhere in this system, so
     // a payment booked without a rate would store dollars in a bolivar column
     // and throw the cash flow off by the exchange rate. Resolve it here rather
-    // than trusting every caller to pass one.
-    let exchangeRate = input.exchangeRate ?? null;
-    if (!exchangeRate && !input.amountBs) {
+    // than trusting every caller to pass one — once, however many sales.
+    let currentRate: number | null = null;
+    if (payments.some((payment) => !payment.exchangeRate && !payment.amountBs)) {
       const current = await this.exchangeRates.getCurrentRate(companyId);
       if (current.unavailable || !current.effectiveRate) {
         throw new BadRequestException(
           'No hay tasa de cambio disponible: registre la tasa o indique el monto en bolívares.',
         );
       }
-      exchangeRate = current.effectiveRate;
+      currentRate = current.effectiveRate;
     }
+
+    return this.prisma.$transaction(async (tx) => {
+      const written = [];
+      for (const payment of payments) {
+        written.push(await this.writePayment(tx, companyId, byId.get(payment.saleId)!, payment, currentRate));
+      }
+      return written;
+    });
+  }
+
+  /** One payment inside an open transaction. Validation already happened. */
+  private async writePayment(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    sale: Sale,
+    input: SalePaymentWrite,
+    currentRate: number | null,
+  ) {
+    const saleId = sale.id;
+    const newPaidAmount = Number(sale.paidAmount) + input.amount;
+    const newStatus = newPaidAmount >= Number(sale.totalAmount) - CENT_TOLERANCE ? 'paid' : 'partial';
+
+    const txCategory: TransactionCategory = sale.saleType === 'live' ? 'sale_live' : 'sale_dead';
+
+    const exchangeRate = input.exchangeRate ?? (input.amountBs ? null : currentRate);
 
     const amountBs =
       input.amountBs ??
       (exchangeRate ? Math.round(input.amount * exchangeRate * 100) / 100 : input.amount);
     const paymentDate = input.paymentDate ? new Date(input.paymentDate) : new Date();
 
-    return this.prisma.$transaction(async (tx) => {
-      const payment = await tx.salePayment.create({
-        data: {
-          saleId,
-          companyId,
-          amount: input.amount,
-          amountBs,
-          exchangeRate,
-          accountId: input.accountId ?? null,
-          paymentDate,
-          notes: input.notes ?? null,
-        },
-      });
+    // Conditional on the balance read before the transaction opened. A payment
+    // landing in between — the web and the bot at once — makes this match no
+    // row, and the whole payment rolls back instead of one overwriting the
+    // other's paidAmount. Postgres re-checks the condition once the competing
+    // update commits, so the race cannot slip past it.
+    const { count } = await tx.sale.updateMany({
+      where: { id: saleId, companyId, paidAmount: sale.paidAmount },
+      data: { paidAmount: newPaidAmount, paymentStatus: newStatus },
+    });
+    if (count === 0) {
+      throw new ConflictException('La venta cambió mientras se registraba el cobro. Intenta de nuevo.');
+    }
 
-      await tx.sale.update({
-        where: { id: saleId },
-        data: {
-          paidAmount: newPaidAmount,
-          paymentStatus: newStatus,
-        },
-      });
+    const payment = await tx.salePayment.create({
+      data: {
+        saleId,
+        companyId,
+        amount: input.amount,
+        amountBs,
+        exchangeRate,
+        accountId: input.accountId ?? null,
+        paymentDate,
+        notes: input.notes ?? null,
+      },
+    });
 
-      // Auto-create income transaction — amount always in Bs (primary currency)
-      const txCode = await this.sequenceService.next(companyId, 'transaction', tx);
-      await tx.transaction.create({
-        data: {
-          companyId,
-          code: txCode,
-          batchId: sale.batchId,
-          type: 'income' as TransactionType,
-          category: txCategory,
-          amount: amountBs,
-          exchangeRate,
-          accountId: input.accountId ?? null,
-          description: `Cobro de venta: ${sale.quantity} pollos (${sale.saleType === 'live' ? 'vivos' : 'muertos'})`,
+    // Auto-create income transaction — amount always in Bs (primary currency)
+    const txCode = await this.sequenceService.next(companyId, 'transaction', tx);
+    await tx.transaction.create({
+      data: {
+        companyId,
+        code: txCode,
+        batchId: sale.batchId,
+        type: 'income' as TransactionType,
+        category: txCategory,
+        amount: amountBs,
+        exchangeRate,
+        accountId: input.accountId ?? null,
+        description: `Cobro de venta: ${sale.quantity} pollos (${sale.saleType === 'live' ? 'vivos' : 'muertos'})`,
+        sourceType: 'sale_payment',
+        sourceId: payment.id,
+        transactionDate: paymentDate,
+      },
+    });
+
+    // Treasury side: where the money actually landed. Same transaction as the
+    // payment, so the balance can never drift from the ledger.
+    if (input.accountId) {
+      const account = await tx.account.findFirst({
+        where: { id: input.accountId, companyId },
+        select: { currency: true },
+      });
+      if (!account) throw new NotFoundException('Cuenta no encontrada');
+
+      await this.movements.record(
+        companyId,
+        {
+          accountId: input.accountId,
+          direction: 'in',
+          // A sale payment always carries its dollar figure, so a dollar
+          // account gets exactly that and a bolivar account the bolivares.
+          amount: account.currency === 'USD' ? input.amount : amountBs,
+          movementDate: paymentDate,
+          reference: input.reference ?? null,
+          counterparty: null,
+          concept: `Cobro de venta ${sale.code ?? ''}`.trim(),
           sourceType: 'sale_payment',
           sourceId: payment.id,
-          transactionDate: paymentDate,
         },
-      });
+        tx,
+      );
+    }
 
-      // Treasury side: where the money actually landed. Same transaction as the
-      // payment, so the balance can never drift from the ledger.
-      if (input.accountId) {
-        const account = await tx.account.findFirst({
-          where: { id: input.accountId, companyId },
-          select: { currency: true },
-        });
-        if (!account) throw new NotFoundException('Cuenta no encontrada');
-
-        await this.movements.record(
-          companyId,
-          {
-            accountId: input.accountId,
-            direction: 'in',
-            amount: account.currency === 'USD' ? input.amount : amountBs,
-            movementDate: paymentDate,
-            reference: input.reference ?? null,
-            counterparty: null,
-            concept: `Cobro de venta ${sale.code ?? ''}`.trim(),
-            sourceType: 'sale_payment',
-            sourceId: payment.id,
-          },
-          tx,
-        );
-      }
-
-      return payment;
-    });
+    return payment;
   }
 
   async getPayments(companyId: string, saleId: string) {
@@ -424,6 +564,64 @@ export class SalesService {
     });
   }
 
+  /** Undoes one payment of a sale. */
+  async voidPayment(companyId: string, saleId: string, paymentId: string) {
+    const payment = await this.prisma.salePayment.findFirst({
+      where: { id: paymentId, saleId, companyId },
+      select: { id: true },
+    });
+    if (!payment) throw new NotFoundException('Cobro no encontrado');
+    return this.voidPayments(companyId, [payment.id]);
+  }
+
+  /**
+   * Undoes payments as if they had never been registered.
+   *
+   * Each payment goes with the income transaction and the treasury movement it
+   * booked, and every sale touched has its balance worked out again from the
+   * payments it has left. All of it in one transaction — the payments were
+   * registered together, and half an undo would leave a balance that matches
+   * nothing.
+   */
+  async voidPayments(companyId: string, paymentIds: string[]) {
+    const unique = [...new Set(paymentIds)];
+    const payments = await this.prisma.salePayment.findMany({
+      where: { id: { in: unique }, companyId },
+      include: { sale: { select: { id: true, totalAmount: true } } },
+    });
+    if (payments.length !== unique.length) throw new NotFoundException('Cobro no encontrado');
+
+    const sales = new Map(payments.map((payment) => [payment.sale.id, payment.sale]));
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const payment of payments) {
+        await this.movements.reverseBySource(tx, companyId, 'sale_payment', payment.id);
+        await tx.transaction.deleteMany({
+          where: { companyId, sourceType: 'sale_payment', sourceId: payment.id },
+        });
+        await tx.salePayment.delete({ where: { id: payment.id } });
+      }
+
+      for (const sale of sales.values()) {
+        const { _sum } = await tx.salePayment.aggregate({
+          where: { saleId: sale.id },
+          _sum: { amount: true },
+        });
+        const paid = Math.round(Number(_sum.amount ?? 0) * 100) / 100;
+        const total = Number(sale.totalAmount);
+        await tx.sale.update({
+          where: { id: sale.id },
+          data: {
+            paidAmount: paid,
+            paymentStatus: paid <= CENT_TOLERANCE ? 'pending' : paid >= total - CENT_TOLERANCE ? 'paid' : 'partial',
+          },
+        });
+      }
+    });
+
+    return { success: true, voided: payments.length };
+  }
+
   async update(companyId: string, saleId: string, input: Partial<SaleInput & { dueDate?: string }>) {
     const sale = await this.prisma.sale.findFirst({
       where: { id: saleId, companyId },
@@ -431,9 +629,26 @@ export class SalesService {
     });
     if (!sale) throw new NotFoundException('Venta no encontrada');
 
-    // Don't allow changing totalAmount if payments exist
-    if (input.totalAmount !== undefined && sale.payments.length > 0) {
-      throw new BadRequestException('No se puede modificar el monto total con pagos registrados');
+    // Once money has been applied, what was sold, to whom and for how much is
+    // settled. Changing the type would not move the stock back, and the income
+    // already booked would stay under the old category, client or amount. Notes
+    // and the due date are still free.
+    if (sale.payments.length > 0) {
+      const locked: Array<keyof typeof input & keyof typeof sale> = [
+        'totalAmount', 'saleType', 'clientId', 'weightKg', 'pricePerKg', 'pricePerUnit',
+        'pricePerKgBs', 'totalAmountBs', 'exchangeRate',
+      ];
+      const changed = locked.filter((key) => {
+        const next = input[key];
+        if (next === undefined) return false;
+        const current = sale[key];
+        return typeof next === 'number' ? Number(current ?? Number.NaN) !== next : (current ?? null) !== (next ?? null);
+      });
+      if (changed.length > 0) {
+        throw new BadRequestException(
+          'Esta venta ya tiene cobros: solo se pueden cambiar las notas y el vencimiento. Anula sus cobros primero.',
+        );
+      }
     }
 
     // `create` validates the client; this path did not, so a sale could be

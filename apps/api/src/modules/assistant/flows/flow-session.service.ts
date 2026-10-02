@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { Prisma, type BotFlowSession } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
-import type { FlowKind } from './flow.catalog';
+import type { OperationKind } from './flow.catalog';
 
 /** Long enough to fill a form in one sitting, short enough that stale ids die. */
 const DEFAULT_TTL_MINUTES = 60;
@@ -28,7 +28,7 @@ export class FlowSessionService {
     companyId: string;
     channel: string;
     externalUserId: string;
-    flowKind: FlowKind;
+    flowKind: OperationKind;
     context?: Prisma.InputJsonValue;
     /** Answers already known, so their questions are never asked. */
     answers?: Prisma.InputJsonValue;

@@ -8,7 +8,9 @@ export class FeedConsumptionScheduler {
 
   constructor(private readonly feedService: FeedService) {}
 
-  @Cron('0 6 * * *') // Every day at 6:00 AM
+  // 6:00 in Caracas. Without the zone it ran at 6:00 of wherever the server
+  // is — 2:00 on a UTC host, before the day's logs could exist.
+  @Cron('0 6 * * *', { timeZone: 'America/Caracas' })
   async handleDailyFeedGeneration() {
     this.logger.log('Starting daily auto feed consumption generation...');
 

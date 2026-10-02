@@ -294,6 +294,40 @@ export class MovementsService {
   }
 
   /**
+   * Takes back the movements an operation booked, and their effect on balances.
+   *
+   * Used when the operation itself is being undone, inside the caller's
+   * transaction. The movements are deleted rather than countered with opposite
+   * ones: the operation they belonged to is gone too, and a pair of entries
+   * cancelling each other would only be noise in the account's history.
+   */
+  async reverseBySource(
+    tx: Prisma.TransactionClient,
+    companyId: string,
+    sourceType: MovementSource,
+    sourceId: string,
+  ): Promise<number> {
+    const movements = await tx.accountMovement.findMany({
+      where: { companyId, sourceType, sourceId },
+    });
+
+    for (const movement of movements) {
+      await tx.account.update({
+        where: { id: movement.accountId },
+        data: {
+          currentBalance:
+            movement.direction === 'in'
+              ? { decrement: movement.amount }
+              : { increment: movement.amount },
+        },
+      });
+      await tx.accountMovement.delete({ where: { id: movement.id } });
+    }
+
+    return movements.length;
+  }
+
+  /**
    * Recomputes every balance from its movements. Reconciliation tool — the
    * running balance is maintained transactionally, so a mismatch here means a
    * bug, and the report says so rather than silently repairing it.

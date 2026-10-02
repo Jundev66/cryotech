@@ -8,6 +8,15 @@ const API_BASE = 'https://api.telegram.org';
 const REQUEST_TIMEOUT_MS = 20_000;
 
 /**
+ * The longest a rate limit is waited out before giving up on the message.
+ *
+ * A few seconds is a burst of replies — a batch of receipts, the digest — and
+ * worth waiting for. A long `retry_after` means real flooding, and holding the
+ * sender's queue that long would stall everything behind it.
+ */
+const MAX_RETRY_AFTER_SECONDS = 5;
+
+/**
  * Ceiling on a downloaded attachment.
  *
  * The Bot API will not serve a file over 20 MB at all, so this only has to be
@@ -122,11 +131,14 @@ export class TelegramApiService {
    * Calls a Bot API method and throws on failure.
    *
    * A rejected send that only logged would leave the caller believing the user
-   * had seen a message they never got, so it has to surface.
+   * had seen a message they never got, so it has to surface. A short rate
+   * limit is the one failure waited out and tried once more: the message is
+   * fine, it only arrived too soon after the previous ones.
    */
   private async call<T = unknown>(
     method: string,
     body: Record<string, unknown>,
+    retried = false,
   ): Promise<T | undefined> {
     if (!this.isConfigured()) {
       throw new ServiceUnavailableException('Telegram no está configurado (falta TELEGRAM_BOT_TOKEN)');
@@ -144,6 +156,13 @@ export class TelegramApiService {
       if (!data.ok) throw new Error(data.description ?? 'respuesta ok:false');
       return data.result;
     } catch (error) {
+      const waitSeconds = retryAfterSeconds(error);
+      if (!retried && waitSeconds !== null && waitSeconds <= MAX_RETRY_AFTER_SECONDS) {
+        this.logger.warn(`Bot API rate-limited ${method}; retrying in ${waitSeconds}s`);
+        await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+        return this.call<T>(method, body, true);
+      }
+
       this.logger.error(`Bot API rejected ${method}`, describe(error));
       throw new ServiceUnavailableException(`Telegram rechazó ${method}`);
     }
@@ -154,6 +173,15 @@ export class TelegramApiService {
   private get token(): string {
     return this.configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '';
   }
+}
+
+/** How long Telegram asked us to wait, when the failure was a rate limit. */
+function retryAfterSeconds(error: unknown): number | null {
+  const response = (error as {
+    response?: { status?: number; data?: { parameters?: { retry_after?: number } } };
+  })?.response;
+  if (response?.status !== 429) return null;
+  return Math.max(1, Number(response.data?.parameters?.retry_after ?? 1));
 }
 
 /**

@@ -34,6 +34,8 @@ import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
 import { MeasurementUnitsModule } from './modules/measurement-units/measurement-units.module';
 import { ProductCategoriesModule } from './modules/product-categories/product-categories.module';
+import { DemoModule } from './modules/demo/demo.module';
+import { DemoQuotaGuard } from './modules/demo/demo-quota.guard';
 import { SequenceModule } from './common/services/sequence.module';
 import { HealthModule } from './modules/health/health.module';
 
@@ -75,6 +77,7 @@ import { HealthModule } from './modules/health/health.module';
     TelegramModule,
     MeasurementUnitsModule,
     ProductCategoriesModule,
+    DemoModule,
   ],
   providers: [
     // Every response, so a Decimal column never reaches the client as a string
@@ -84,6 +87,8 @@ import { HealthModule } from './modules/health/health.module';
     // default. Opting out has to be deliberate (@SkipThrottle), which is the
     // right way round.
     { provide: APP_GUARD, useClass: LoopbackAwareThrottlerGuard },
+    // Applies cybersecurity restrictions and quota caps to demo companies.
+    { provide: APP_GUARD, useClass: DemoQuotaGuard },
   ],
 })
 export class AppModule {}

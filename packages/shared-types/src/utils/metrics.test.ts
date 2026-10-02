@@ -6,6 +6,7 @@ import {
   calculateFCR,
   calculateMortalityRate,
   formatCurrency,
+  formatDate,
   formatUsd,
   formatWeight,
   getBatchWeek,
@@ -113,5 +114,19 @@ describe('formatting', () => {
   it('switches from grams to kilos at a thousand', () => {
     expect(formatWeight(950)).toBe('950 g');
     expect(formatWeight(2450)).toBe('2,45 kg');
+  });
+});
+
+describe('formatDate', () => {
+  it('shows a calendar date on its own day, whatever the viewer zone', () => {
+    // A DATE column arrives as UTC midnight; in Venezuela that instant is the
+    // evening before, which is the day every date used to show.
+    expect(formatDate('2026-09-12T00:00:00.000Z')).toMatch(/12/);
+    expect(formatDate('2026-09-12')).toMatch(/12/);
+  });
+
+  it('handles nothing and nonsense', () => {
+    expect(formatDate(null)).toBe('-');
+    expect(formatDate('no es fecha')).toBe('-');
   });
 });

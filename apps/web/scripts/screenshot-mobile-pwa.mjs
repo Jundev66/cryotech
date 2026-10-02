@@ -1,5 +1,4 @@
 import { chromium } from '@playwright/test';
-import { copyFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ARTIFACT_DIR = 'C:\\Users\\PC\\.gemini\\antigravity-cli\\brain\\036fe53c-08bd-48a3-acd3-60c99dcfb35a';

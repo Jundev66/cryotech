@@ -38,10 +38,15 @@ export function AppHeader({ title }: { title?: string }) {
                   <Building2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <span className="text-sm font-bold text-slate-100 leading-tight">
                       {activeCompany?.name || 'CryoTech'}
                     </span>
+                    {activeCompany?.isDemo && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0">
+                        Demo Temporal
+                      </span>
+                    )}
                     {companies.length > 1 && (
                       <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                     )}

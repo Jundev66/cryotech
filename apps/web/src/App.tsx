@@ -16,20 +16,29 @@ const OnboardingPage = lazy(() => import('@/pages/onboarding'));
 const DashboardPage = lazy(() => import('@/pages/dashboard'));
 const BatchesPage = lazy(() => import('@/pages/batches'));
 const BatchDetailPage = lazy(() => import('@/pages/batch-detail'));
+const BatchCreatePage = lazy(() => import('@/pages/batch-create'));
 const DailyLogsPage = lazy(() => import('@/pages/daily-logs'));
+const DailyLogCreatePage = lazy(() => import('@/pages/daily-log-create'));
 const SalesPage = lazy(() => import('@/pages/sales'));
+const SaleCreatePage = lazy(() => import('@/pages/sale-create'));
 const TransactionsPage = lazy(() => import('@/pages/transactions'));
 const ClientsPage = lazy(() => import('@/pages/clients'));
+const ClientCreatePage = lazy(() => import('@/pages/client-create'));
 const ProductsPage = lazy(() => import('@/pages/products'));
+const ProductCreatePage = lazy(() => import('@/pages/product-create'));
 const WarehousesPage = lazy(() => import('@/pages/warehouses'));
+const WarehouseCreatePage = lazy(() => import('@/pages/warehouse-create'));
 const FeedPage = lazy(() => import('@/pages/feed'));
 const ReportsPage = lazy(() => import('@/pages/reports'));
 const UsersPage = lazy(() => import('@/pages/users'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
 const EntriesPage = lazy(() => import('@/pages/entries'));
+const EntryCreatePage = lazy(() => import('@/pages/entry-create'));
 const TreasuryPage = lazy(() => import('@/pages/treasury'));
 const ProcessingPage = lazy(() => import('@/pages/processing'));
+const ProcessingCreatePage = lazy(() => import('@/pages/processing-create'));
 const ConsumptionsPage = lazy(() => import('@/pages/consumptions'));
+const ConsumptionCreatePage = lazy(() => import('@/pages/consumption-create'));
 const LandingPage = lazy(() => import('@/pages/landing'));
 
 function AuthLayout() {
@@ -209,21 +218,30 @@ export function App() {
       <Route path="/dashboard" element={<DashboardLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="batches" element={<BatchesPage />} />
+        <Route path="batches/new" element={<BatchCreatePage />} />
         <Route path="batches/:id" element={<BatchDetailPage />} />
         <Route path="daily-logs" element={<DailyLogsPage />} />
+        <Route path="daily-logs/new" element={<DailyLogCreatePage />} />
         <Route path="sales" element={<SalesPage />} />
+        <Route path="sales/new" element={<SaleCreatePage />} />
         <Route path="transactions" element={<TransactionsPage />} />
         <Route path="clients" element={<ClientsPage />} />
+        <Route path="clients/new" element={<ClientCreatePage />} />
         <Route path="products" element={<ProductsPage />} />
+        <Route path="products/new" element={<ProductCreatePage />} />
         <Route path="warehouses" element={<WarehousesPage />} />
+        <Route path="warehouses/new" element={<WarehouseCreatePage />} />
         <Route path="feed" element={<FeedPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="entries" element={<EntriesPage />} />
+        <Route path="entries/new" element={<EntryCreatePage />} />
         <Route path="treasury" element={<TreasuryPage />} />
         <Route path="processing" element={<ProcessingPage />} />
+        <Route path="processing/new" element={<ProcessingCreatePage />} />
         <Route path="consumptions" element={<ConsumptionsPage />} />
+        <Route path="consumptions/new" element={<ConsumptionCreatePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

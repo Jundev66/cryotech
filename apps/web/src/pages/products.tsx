@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,15 +20,19 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Loader2, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { SearchInput } from '@/components/ui/search-input';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 import { useListSearch } from '@/hooks/use-list-search';
 import { apiMessage } from '@/lib/api-error';
 import { toast } from 'sonner';
 
+const PAGE_SIZE = 10;
+
 export default function ProductsPage() {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [page, setPage] = useState(1);
 
   const { value: searchValue, setValue: setSearchValue, search } = useListSearch();
   const { data: products, isLoading } = useQuery({
@@ -38,14 +43,12 @@ export default function ProductsPage() {
   const { data: categories } = useQuery({ queryKey: ['product-categories'], queryFn: productCategoriesApi.findAll });
   const { data: units } = useQuery({ queryKey: ['measurement-units'], queryFn: measurementUnitsApi.findAll });
 
-  const createMutation = useMutation({
-    mutationFn: (data: ProductInput) => editing
-      ? productsApi.update(editing.id, data)
-      : productsApi.create(data),
+  const updateMutation = useMutation({
+    mutationFn: (data: ProductInput) => productsApi.update(editing!.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      toast.success(editing ? 'Producto actualizado' : 'Producto creado');
-      setOpen(false);
+      toast.success('Producto actualizado');
+      setEditOpen(false);
       setEditing(null);
       form.reset();
     },
@@ -75,97 +78,45 @@ export default function ProductsPage() {
       currentStock: product.currentStock,
       minStock: product.minStock,
     });
-    setOpen(true);
+    setEditOpen(true);
   }
 
-  function onOpenChange(open: boolean) {
-    setOpen(open);
-    if (!open) { setEditing(null); form.reset(); }
-  }
+  const filteredProducts = (products || []).filter(
+    (p) => typeFilter === 'all' || p.productType === typeFilter,
+  );
 
-  const filteredProducts = products?.filter(
-    (p) => typeFilter === 'all' || p.productType === typeFilter
-  ) ?? [];
+  const totalPages = Math.ceil(filteredProducts.length / PAGE_SIZE) || 1;
+  const paginatedProducts = filteredProducts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Productos e Insumos" subtitle="Inventario de productos">
-        <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" /> Nuevo Producto</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>{editing ? 'Editar Producto' : 'Nuevo Producto'}</DialogTitle></DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
-                <FormField control={form.control} name="name" render={({ field }) => (
-                  <FormItem><FormLabel>Nombre</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="categoryId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Categoria</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger className="w-full" data-testid="product-category"><SelectValue placeholder="Seleccionar categoria" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {categories?.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="productType" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || 'consumable'}>
-                      <FormControl><SelectTrigger className="w-full"><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="consumable">Consumible</SelectItem>
-                        <SelectItem value="equipment">Equipo</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="unitId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Unidad</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger className="w-full" data-testid="product-unit"><SelectValue placeholder="Seleccionar unidad" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {units?.map((u) => (<SelectItem key={u.id} value={u.id}>{u.name} ({u.abbreviation})</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="currentStock" render={({ field }) => (
-                    <FormItem><FormLabel>Stock actual</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={form.control} name="minStock" render={({ field }) => (
-                    <FormItem><FormLabel>Stock minimo</FormLabel><FormControl><Input type="number" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                </div>
-                <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {editing ? 'Actualizar' : 'Crear'}
-                </Button>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+      <PageHeader title="Productos e Insumos" subtitle="Inventario de alimentos, medicinas y equipos">
+        <Button asChild data-testid="new-product">
+          <Link to="/dashboard/products/new">
+            <Plus className="mr-2 h-4 w-4" /> Nuevo Producto
+          </Link>
+        </Button>
       </PageHeader>
 
       <SearchInput
         value={searchValue}
-        onChange={setSearchValue}
-        placeholder="Buscar por codigo, nombre o categoria..."
+        onChange={(val) => {
+          setSearchValue(val);
+          setPage(1);
+        }}
+        placeholder="Buscar por código, nombre..."
         label="Buscar productos"
         className="sm:max-w-sm"
         data-testid="products-search"
       />
 
-      <Tabs value={typeFilter} onValueChange={setTypeFilter}>
+      <Tabs
+        value={typeFilter}
+        onValueChange={(val) => {
+          setTypeFilter(val);
+          setPage(1);
+        }}
+      >
         <TabsList>
           <TabsTrigger value="all">Todos</TabsTrigger>
           <TabsTrigger value="consumable">Consumibles</TabsTrigger>
@@ -178,47 +129,128 @@ export default function ProductsPage() {
           {isLoading ? (
             <div className="space-y-2 p-4">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
           ) : filteredProducts.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">Sin productos registrados</p>
+            <p className="py-8 text-center text-muted-foreground" data-testid="products-empty">Sin productos registrados</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Codigo</TableHead>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Categoria</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Unidad</TableHead>
-                  <TableHead className="text-right">Stock</TableHead>
-                  <TableHead className="text-right">Min</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredProducts.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="text-muted-foreground text-xs font-mono">{p.code ?? '-'}</TableCell>
-                    <TableCell className="font-medium">
-                      {p.name}
-                      {p.currentStock <= p.minStock && (
-                        <AlertTriangle className="ml-1 inline h-3 w-3 text-amber-500" />
-                      )}
-                    </TableCell>
-                    <TableCell><Badge variant="outline">{p.category?.name ?? '-'}</Badge></TableCell>
-                    <TableCell><Badge variant="secondary">{PRODUCT_TYPE_LABELS[p.productType] || p.productType}</Badge></TableCell>
-                    <TableCell>{p.measurementUnit?.abbreviation ?? '-'}</TableCell>
-                    <TableCell className="text-right">{formatNumber(p.currentStock)}</TableCell>
-                    <TableCell className="text-right">{formatNumber(p.minStock)}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon-xs" onClick={() => openEdit(p)}><Pencil className="h-3 w-3" /></Button>
-                      <Button variant="ghost" size="icon-xs" onClick={() => deleteMutation.mutate(p.id)}><Trash2 className="h-3 w-3" /></Button>
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Categoría</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Stock Actual</TableHead>
+                    <TableHead className="text-right">Stock Mínimo</TableHead>
+                    <TableHead>Unidad</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {paginatedProducts.map((product) => {
+                    const isLowStock = Number(product.currentStock) <= Number(product.minStock) && Number(product.minStock) > 0;
+                    return (
+                      <TableRow key={product.id} data-testid="product-row" data-code={product.code ?? ''}>
+                        <TableCell className="text-muted-foreground text-xs font-mono">{product.code ?? '-'}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            {product.name}
+                            {isLowStock && (
+                              <Badge variant="destructive" className="gap-1 text-xs">
+                                <AlertTriangle className="h-3 w-3" /> Stock Bajo
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{product.category?.name || '-'}</TableCell>
+                        <TableCell>{PRODUCT_TYPE_LABELS[product.productType || 'consumable']}</TableCell>
+                        <TableCell className="text-right font-medium">{formatNumber(product.currentStock, 2)}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">{formatNumber(product.minStock, 2)}</TableCell>
+                        <TableCell>{product.measurementUnit?.abbreviation || '-'}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon-xs" onClick={() => openEdit(product)} title="Editar"><Pencil className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon-xs" onClick={() => deleteMutation.mutate(product.id)} title="Eliminar"><Trash2 className="h-3 w-3" /></Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+
+              <PaginationControls
+                page={page}
+                totalPages={totalPages}
+                totalItems={filteredProducts.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+                itemName="productos"
+              />
+            </>
           )}
         </CardContent>
       </Card>
+
+      {/* Dialog para edición rápida */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar Producto</DialogTitle></DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit((v) => updateMutation.mutate(v))} className="space-y-4">
+              <FormField control={form.control} name="name" render={({ field }) => (
+                <FormItem><FormLabel>Nombre *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="categoryId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Categoría *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Seleccionar categoría" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {categories?.map((c) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="productType" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tipo *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value || 'consumable'}>
+                    <FormControl><SelectTrigger className="w-full"><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="consumable">Consumible</SelectItem>
+                      <SelectItem value="equipment">Equipo</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="unitId" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unidad de Medida *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger className="w-full"><SelectValue placeholder="Seleccionar unidad" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {units?.map((u) => (<SelectItem key={u.id} value={u.id}>{u.name} ({u.abbreviation})</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="currentStock" render={({ field }) => (
+                  <FormItem><FormLabel>Stock Actual</FormLabel><FormControl><Input type="number" step="0.01" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+                <FormField control={form.control} name="minStock" render={({ field }) => (
+                  <FormItem><FormLabel>Stock Mínimo</FormLabel><FormControl><Input type="number" step="0.01" {...field} /></FormControl><FormMessage /></FormItem>
+                )} />
+              </div>
+              <Button type="submit" className="w-full" disabled={updateMutation.isPending}>
+                {updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Guardar Cambios
+              </Button>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

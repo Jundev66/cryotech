@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,7 +23,6 @@ import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,6 +34,7 @@ import { Progress } from '@/components/ui/progress';
 import { Plus, Loader2, DollarSign, ShoppingCart, Trash2, Undo2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { SearchInput } from '@/components/ui/search-input';
+import { PaginationControls } from '@/components/ui/pagination-controls';
 import { useListSearch } from '@/hooks/use-list-search';
 import { ClientCombobox } from '@/components/forms/client-combobox';
 import { BulkSaleDialog } from '@/components/forms/bulk-sale-dialog';
@@ -191,90 +192,32 @@ export default function SalesPage() {
       : 0
     : 0;
 
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const sortedSales = [...(sales || [])].sort((a, b) => b.saleDate.localeCompare(a.saleDate));
+  const totalPages = Math.ceil(sortedSales.length / PAGE_SIZE) || 1;
+  const paginatedSales = sortedSales.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Ventas" subtitle="Registro de ventas de aves">
-        <BulkSaleDialog batches={sellBatches} />
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="new-sale"><Plus className="mr-2 h-4 w-4" /> Nueva Venta</Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader><DialogTitle>Registrar Venta</DialogTitle></DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit((v) => createMutation.mutate(v))} className="space-y-4">
-                <FormField control={form.control} name="batchId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Lote</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger className="w-full" data-testid="sale-batch"><SelectValue placeholder="Seleccionar lote" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {sellBatches.map((b) => (<SelectItem key={b.id} value={b.id}>{b.breed} ({formatNumber(b.currentQuantity)} aves)</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="clientId" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cliente (opcional)</FormLabel>
-                    <FormControl>
-                      <ClientCombobox value={field.value} onChange={field.onChange} data-testid="sale-client" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="saleType" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo de venta</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger className="w-full" data-testid="sale-type"><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {Object.entries(SALE_TYPE_LABELS).map(([k, v]) => (<SelectItem key={k} value={k}>{v}</SelectItem>))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="quantity" render={({ field }) => (
-                    <FormItem><FormLabel>Cantidad</FormLabel><FormControl><Input type="number" data-testid="sale-quantity" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={form.control} name="weightKg" render={({ field }) => (
-                    <FormItem><FormLabel>Peso total (kg)</FormLabel><FormControl><Input type="number" step="0.1" data-testid="sale-weight" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="pricePerKg" render={({ field }) => (
-                    <FormItem><FormLabel>Precio / kg</FormLabel><FormControl><Input type="number" step="0.01" data-testid="sale-price-kg" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                  <FormField control={form.control} name="pricePerUnit" render={({ field }) => (
-                    <FormItem><FormLabel>Precio / ave</FormLabel><FormControl><Input type="number" step="0.01" {...field} /></FormControl><FormMessage /></FormItem>
-                  )} />
-                </div>
-                <FormField control={form.control} name="totalAmount" render={({ field }) => (
-                  <FormItem><FormLabel>Total</FormLabel><FormControl><Input type="number" step="0.01" data-testid="sale-total" {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="dueDate" render={({ field }) => (
-                  <FormItem><FormLabel>Fecha de vencimiento (opcional)</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <FormField control={form.control} name="notes" render={({ field }) => (
-                  <FormItem><FormLabel>Notas</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>
-                )} />
-                <Button type="submit" className="w-full" data-testid="submit-sale" disabled={createMutation.isPending}>
-                  {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Registrar venta
-                </Button>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+      <PageHeader title="Ventas" subtitle="Registro y control de ventas">
+        <div className="flex items-center gap-2">
+          <BulkSaleDialog batches={sellBatches} />
+          <Button asChild data-testid="new-sale">
+            <Link to="/dashboard/sales/new">
+              <Plus className="mr-2 h-4 w-4" /> Nueva Venta
+            </Link>
+          </Button>
+        </div>
       </PageHeader>
 
       <SearchInput
         value={searchValue}
-        onChange={setSearchValue}
-        placeholder="Buscar por codigo, cliente o lote..."
+        onChange={(val) => {
+          setSearchValue(val);
+          setPage(1);
+        }}
+        placeholder="Buscar por código, cliente o lote..."
         label="Buscar ventas"
         className="sm:max-w-sm"
         data-testid="sales-search"
@@ -299,7 +242,13 @@ export default function SalesPage() {
         </Card>
       </div>
 
-      <Tabs value={paymentFilter} onValueChange={setPaymentFilter}>
+      <Tabs
+        value={paymentFilter}
+        onValueChange={(val) => {
+          setPaymentFilter(val);
+          setPage(1);
+        }}
+      >
         <TabsList>
           <TabsTrigger value="all">Todos</TabsTrigger>
           <TabsTrigger value="pending">Pendientes</TabsTrigger>
@@ -315,64 +264,75 @@ export default function SalesPage() {
           ) : !sales || sales.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground" data-testid="sales-empty">Sin ventas registradas</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Codigo</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Lote</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Estado Pago</TableHead>
-                  <TableHead>Vence</TableHead>
-                  <TableHead className="text-right">Cantidad</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Saldo Pendiente</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sales.sort((a, b) => b.saleDate.localeCompare(a.saleDate)).map((sale) => (
-                  <TableRow key={sale.id} data-testid="sale-row" data-code={sale.code ?? ''} className="cursor-pointer" onClick={() => handleRowClick(sale)}>
-                    <TableCell className="text-muted-foreground text-xs font-mono">{sale.code ?? '-'}</TableCell>
-                    <TableCell>{formatDate(sale.saleDate)}</TableCell>
-                    <TableCell>{sale.batch?.breed || '-'}</TableCell>
-                    <TableCell>{sale.client?.name || '-'}</TableCell>
-                    <TableCell>{SALE_TYPE_LABELS[sale.saleType] || sale.saleType}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={PAYMENT_STATUS_COLORS[sale.paymentStatus] || ''}>
-                        {PAYMENT_STATUS_LABELS[sale.paymentStatus] || sale.paymentStatus}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {sale.dueDate ? (
-                        <span className={isOverdue(sale) ? 'font-medium text-red-600' : undefined} data-testid="sale-due">
-                          {formatDate(sale.dueDate)}{isOverdue(sale) ? ' · vencida' : ''}
-                        </span>
-                      ) : '-'}
-                    </TableCell>
-                    <TableCell className="text-right">{formatNumber(sale.quantity)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatUsd(sale.totalAmount)}</TableCell>
-                    <TableCell className="text-right font-medium" data-testid="sale-balance">
-                      {formatUsd(sale.totalAmount - sale.paidAmount)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        disabled={sale.paymentStatus !== 'pending'}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteMutation.mutate(sale.id);
-                        }}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Lote</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Estado Pago</TableHead>
+                    <TableHead>Vence</TableHead>
+                    <TableHead className="text-right">Cantidad</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Saldo Pendiente</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {paginatedSales.map((sale) => (
+                    <TableRow key={sale.id} data-testid="sale-row" data-code={sale.code ?? ''} className="cursor-pointer" onClick={() => handleRowClick(sale)}>
+                      <TableCell className="text-muted-foreground text-xs font-mono">{sale.code ?? '-'}</TableCell>
+                      <TableCell>{formatDate(sale.saleDate)}</TableCell>
+                      <TableCell>{sale.batch?.breed || '-'}</TableCell>
+                      <TableCell>{sale.client?.name || '-'}</TableCell>
+                      <TableCell>{SALE_TYPE_LABELS[sale.saleType] || sale.saleType}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={PAYMENT_STATUS_COLORS[sale.paymentStatus] || ''}>
+                          {PAYMENT_STATUS_LABELS[sale.paymentStatus] || sale.paymentStatus}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {sale.dueDate ? (
+                          <span className={isOverdue(sale) ? 'font-medium text-red-600' : undefined} data-testid="sale-due">
+                            {formatDate(sale.dueDate)}{isOverdue(sale) ? ' · vencida' : ''}
+                          </span>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">{formatNumber(sale.quantity)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatUsd(sale.totalAmount)}</TableCell>
+                      <TableCell className="text-right font-medium" data-testid="sale-balance">
+                        {formatUsd(sale.totalAmount - sale.paidAmount)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          disabled={sale.paymentStatus !== 'pending'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteMutation.mutate(sale.id);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <PaginationControls
+                page={page}
+                totalPages={totalPages}
+                totalItems={sortedSales.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+                itemName="ventas"
+              />
+            </>
           )}
         </CardContent>
       </Card>

@@ -55,13 +55,15 @@ export const Hero: React.FC<HeroProps> = ({ onOpenWaitlist, onStartDemo, demoLoa
             </a>
           )}
 
-          <button
-            onClick={onOpenWaitlist}
+          <a
+            href="https://mobile-ochre-pi.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium text-sm text-slate-200 bg-[#161b24] hover:bg-[#1e2532] border border-white/10 transition-all active:scale-95"
           >
             <Smartphone className="w-4 h-4 text-emerald-400" />
-            <span>Descargar APK Móvil</span>
-          </button>
+            <span>Probar PWA Móvil</span>
+          </a>
         </div>
 
         {/* Modern Responsive Dashboard Preview Widget (NO overflow, sleek dark slate) */}

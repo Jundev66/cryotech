@@ -64,13 +64,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenWaitlist }) => {
               <span>Iniciar Sesión</span>
             </a>
 
-            <button
-              onClick={onOpenWaitlist}
+            <a
+              href="https://mobile-ochre-pi.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 active:scale-95 transition-all shadow-sm"
             >
-              <span>Descargar APK</span>
+              <span>Probar PWA Móvil</span>
               <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+            </a>
           </div>
 
           {/* Mobile Menu Button */}
@@ -116,15 +118,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenWaitlist }) => {
               >
                 Iniciar Sesión
               </a>
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onOpenWaitlist();
-                }}
+              <a
+                href="https://mobile-ochre-pi.vercel.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMobileMenuOpen(false)}
                 className="py-2 text-center rounded-lg bg-emerald-400 text-slate-950 font-bold text-xs"
               >
-                Descargar APK Móvil
-              </button>
+                Probar PWA Móvil
+              </a>
             </div>
           </div>
         )}

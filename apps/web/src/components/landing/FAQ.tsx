@@ -26,8 +26,8 @@ export const FAQ: React.FC = () => {
       a: 'Sí. El sistema cuenta con control de roles granulares (Dueño, Administrador, Galponero, Chofer/Despachador). Los operarios de campo solo tienen acceso a la bitácora de alimento, mortalidad y pesaje, mientras que los saldos de tesorería, cuentas bancarias, costos y márgenes de ganancia quedan exclusivamente reservados para el dueño y su administración.',
     },
     {
-      q: '¿Cómo solicito acceso para probar la APK o la demostración del sistema?',
-      a: 'Haz clic en el botón "Solicitar Demo / APK" en esta página y déjanos los datos de tu granja. Nos pondremos en contacto contigo para coordinar el acceso y entregarte las credenciales de prueba adaptadas a la cantidad de galpones y aves de tu operación.',
+      q: '¿Cómo puedo probar la aplicación móvil (PWA) o el sistema ERP?',
+      a: 'Puedes probar la PWA directamente desde cualquier smartphone o computadora haciendo clic en "Probar PWA Móvil" en esta página. También puedes solicitar un piloto para tu granja y coordinar credenciales adaptadas a tus lotes.',
     },
   ];
 

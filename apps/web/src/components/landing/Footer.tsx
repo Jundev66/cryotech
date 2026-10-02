@@ -27,12 +27,17 @@ export const Footer: React.FC<FooterProps> = ({ onOpenWaitlist }) => {
         {/* Links */}
         <div className="flex items-center gap-5 text-xs">
           <a href="#funciones" className="hover:text-slate-200">Funciones</a>
-          <a href="#app-mobile" className="hover:text-slate-200 text-emerald-400">App Móvil</a>
+          <a href="#app-mobile" className="hover:text-slate-200 text-emerald-400">PWA Móvil</a>
           <a href="#capturas" className="hover:text-slate-200">Plataforma Web</a>
           <a href={webAppLoginUrl} className="hover:text-slate-200">Iniciar Sesión</a>
-          <button onClick={onOpenWaitlist} className="text-emerald-400 hover:text-emerald-300">
-            Descargar APK
-          </button>
+          <a
+            href="https://mobile-ochre-pi.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-emerald-400 hover:text-emerald-300"
+          >
+            Probar PWA
+          </a>
         </div>
 
         {/* Copyright */}

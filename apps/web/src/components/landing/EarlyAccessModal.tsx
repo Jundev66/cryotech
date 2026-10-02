@@ -56,13 +56,13 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({ isOpen, onCl
             <div className="mb-5 sm:mb-6 space-y-1.5 sm:space-y-2 pr-6">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-emerald-400 text-[11px] font-mono font-bold">
                 <Smartphone className="w-3.5 h-3.5" />
-                <span>Acceso a la APK Demo</span>
+                <span>Acceso a la PWA Móvil</span>
               </div>
               <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
-                Solicita Acceso a CryoTech Mobile
+                Solicita Acceso a CryoTech Mobile (PWA)
               </h3>
               <p className="text-xs text-emerald-200/70 leading-relaxed">
-                Dado que la app se encuentra en fase de demo privado, distribuimos la APK de prueba a productores seleccionados. Déjanos tus datos para postular tu granja:
+                Dado que la app se encuentra en fase de piloto, brindamos acceso prioritario a productores seleccionados con soporte offline. Déjanos tus datos para postular tu granja:
               </p>
             </div>
 
@@ -139,8 +139,8 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({ isOpen, onCl
                     onChange={(e) => setFormData({ ...formData, deviceOs: e.target.value })}
                     className="w-full bg-[#121f18] text-white px-3 py-2 rounded-xl border border-emerald-800/60 focus:outline-none focus:border-emerald-400"
                   >
-                    <option value="android">Android (APK Instalable)</option>
-                    <option value="ios">iOS (Apple TestFlight)</option>
+                    <option value="android">Android (PWA Instalable)</option>
+                    <option value="ios">iOS / iPhone (PWA Instalable)</option>
                     <option value="web">Navegador Web / Tablet</option>
                   </select>
                 </div>
@@ -151,7 +151,7 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({ isOpen, onCl
                   type="submit"
                   className="w-full py-3 px-4 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-bold text-xs sm:text-sm tracking-wide transition-all shadow-lg shadow-emerald-500/20 active:scale-95"
                 >
-                  Solicitar APK para mi Granja
+                  Solicitar Acceso PWA para mi Granja
                 </button>
               </div>
 
@@ -171,7 +171,7 @@ export const EarlyAccessModal: React.FC<EarlyAccessModalProps> = ({ isOpen, onCl
             </h3>
 
             <p className="text-xs sm:text-sm text-emerald-200/80 max-w-sm mx-auto leading-relaxed">
-              Hemos guardado la información de <strong className="text-white">{formData.farmName}</strong>. Te contactaremos para coordinar la instalación de la APK y activar tus credenciales del demo.
+              Hemos guardado la información de <strong className="text-white">{formData.farmName}</strong>. Te contactaremos para habilitar el acceso a la PWA y activar tus credenciales del piloto.
             </p>
 
             <div className="pt-2">

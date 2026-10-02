@@ -120,7 +120,7 @@ export const MobileShowcase: React.FC<MobileShowcaseProps> = ({ onOpenWaitlist }
         <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-14">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-teal-500/30 text-teal-400 text-xs font-semibold mb-3">
             <Smartphone className="w-3.5 h-3.5" />
-            <span>CryoTech Mobile · Android APK</span>
+            <span>CryoTech Mobile · PWA Multiplataforma</span>
           </div>
           <h2 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
             La aplicación móvil real para el productor avícola
@@ -659,20 +659,22 @@ export const MobileShowcase: React.FC<MobileShowcaseProps> = ({ onOpenWaitlist }
               ))}
             </div>
 
-            {/* APK CTA & Action Box */}
+            {/* PWA CTA & Action Box */}
             <div className="pt-6 border-t border-white/10 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-              <button
-                onClick={onOpenWaitlist}
+              <a
+                href="https://mobile-ochre-pi.vercel.app"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-slate-950 bg-teal-400 hover:bg-teal-300 active:scale-95 transition-all shadow-lg shadow-teal-500/20"
               >
-                <Download className="w-4 h-4" />
-                <span>Solicitar APK para Android</span>
+                <Smartphone className="w-4 h-4" />
+                <span>Probar PWA Móvil en Vivo</span>
                 <ArrowRight className="w-4 h-4" />
-              </button>
+              </a>
 
               <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#11151c] border border-white/5 text-slate-400 text-xs">
                 <Smartphone className="w-4 h-4 text-teal-400 shrink-0" />
-                <span>Compatible con Android 8.0 en adelante · Instalación directa</span>
+                <span>Compatible con Android & iOS · PWA Instalable · 100% Offline</span>
               </div>
             </div>
           </div>

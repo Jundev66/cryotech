@@ -38,7 +38,9 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        const refreshToken = await storage.get('cryotech_refresh_token');
+        const refreshToken =
+          (await storage.get('cryotech_refresh_token')) ||
+          localStorage.getItem('cryotech_refresh_token');
         if (!refreshToken) throw new Error('No refresh token');
 
         const { data } = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
@@ -50,6 +52,13 @@ api.interceptors.response.use(
         await storage.remove('cryotech_access_token');
         await storage.remove('cryotech_refresh_token');
         await storage.remove('cryotech_company_id');
+        await storage.remove('cryotech_user_profile');
+        await storage.remove('cryotech_companies');
+        localStorage.removeItem('cryotech_access_token');
+        localStorage.removeItem('cryotech_refresh_token');
+        localStorage.removeItem('cryotech_company_id');
+        localStorage.removeItem('cryotech_user_profile');
+        localStorage.removeItem('cryotech_companies');
         window.location.hash = '#/login';
         return Promise.reject(error);
       }

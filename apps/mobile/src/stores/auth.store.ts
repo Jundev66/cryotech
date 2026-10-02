@@ -150,7 +150,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
-      await api.post('/auth/logout');
+      const refreshToken =
+        (await storage.get('cryotech_refresh_token')) ||
+        localStorage.getItem('cryotech_refresh_token');
+      if (refreshToken) {
+        await api.post('/auth/logout', { refreshToken });
+      }
     } catch {}
     await storage.remove('cryotech_access_token');
     await storage.remove('cryotech_refresh_token');

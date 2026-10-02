@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '@/providers/auth-provider';
 import { authApi } from '@/api/auth.api';
@@ -11,11 +11,13 @@ import { MobileShowcase } from '@/components/landing/MobileShowcase';
 import { ScreenshotsGallery } from '@/components/landing/ScreenshotsGallery';
 import { Footer } from '@/components/landing/Footer';
 import { EarlyAccessModal } from '@/components/landing/EarlyAccessModal';
+import { DemoLeadModal, type LeadInfo } from '@/components/landing/DemoLeadModal';
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
   const [waitlistOpen, setWaitlistOpen] = useState<boolean>(false);
+  const [demoLeadOpen, setDemoLeadOpen] = useState<boolean>(false);
   const [demoLoading, setDemoLoading] = useState<boolean>(false);
 
   const handleOpenWaitlist = () => {
@@ -26,7 +28,11 @@ export default function LandingPage() {
     setWaitlistOpen(false);
   };
 
-  const handleStartDemo = async () => {
+  const handleOpenDemoModal = () => {
+    setDemoLeadOpen(true);
+  };
+
+  const handleStartDemoWithLead = async (lead?: LeadInfo) => {
     setDemoLoading(true);
     try {
       localStorage.removeItem('cryotech_access_token');
@@ -39,8 +45,15 @@ export default function LandingPage() {
       if (data.company?.id) {
         localStorage.setItem('cryotech_company_id', data.company.id);
       }
-      setUser(data.user);
-      toast.success(`Entrando a ${data.company?.name || 'demostración'}`);
+      
+      const userObj = {
+        ...data.user,
+        fullName: lead?.fullName && lead.fullName !== 'Productor Invitado' ? lead.fullName : data.user.fullName,
+      };
+
+      setUser(userObj);
+      setDemoLeadOpen(false);
+      toast.success(`¡Bienvenido! Entrando a tu granja de demostración...`);
       navigate('/dashboard');
     } catch (err: unknown) {
       const message = apiMessage(err, 'Error al iniciar la demostración');
@@ -57,7 +70,7 @@ export default function LandingPage() {
       <main className="flex-1 w-full">
         <Hero
           onOpenWaitlist={handleOpenWaitlist}
-          onStartDemo={handleStartDemo}
+          onStartDemo={handleOpenDemoModal}
           demoLoading={demoLoading}
         />
         <Features />
@@ -68,6 +81,12 @@ export default function LandingPage() {
       <Footer onOpenWaitlist={handleOpenWaitlist} />
 
       <EarlyAccessModal isOpen={waitlistOpen} onClose={handleCloseWaitlist} />
+      <DemoLeadModal
+        isOpen={demoLeadOpen}
+        onClose={() => setDemoLeadOpen(false)}
+        onSubmit={handleStartDemoWithLead}
+        isLoading={demoLoading}
+      />
     </div>
   );
 }

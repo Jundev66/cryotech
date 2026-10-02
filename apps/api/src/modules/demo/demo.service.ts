@@ -1,4 +1,4 @@
-import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -149,7 +149,7 @@ export class DemoService {
       const client2 = await tx.client.create({
         data: { companyId: company.id, code: 'CLI-002', name: 'Avícola San José', phone: '0424-5556677', address: 'Av. Principal Local 4' },
       });
-      const client3 = await tx.client.create({
+      await tx.client.create({
         data: { companyId: company.id, code: 'CLI-003', name: 'Carnicería La Central', phone: '0412-9998877', address: 'Centro Comercial' },
       });
 

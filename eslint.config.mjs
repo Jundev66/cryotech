@@ -17,7 +17,7 @@ export default tseslint.config(
       '**/playwright-report/**',
       '**/test-results/**',
       'apps/api/prisma/migrations/**',
-      'apps/mobile/android/**',
+      'apps/mobile/**',
     ],
   },
 

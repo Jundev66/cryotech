@@ -94,8 +94,42 @@ export function LoginPage() {
         window.location.hash = '#/';
         navigate('/', { replace: true });
       } catch {
-        await haptics.error();
-        toast.error('No se pudo conectar al servidor de demostración');
+        // Fallback garantizado modo demostración offline
+        const demoUser = {
+          id: '11111111-1111-4111-a111-111111111111',
+          email: 'demo@cryotech.com',
+          fullName: 'Productor Demo (CryoTech)',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        const demoCompany = {
+          id: '25aacb04-877b-4db0-a9dc-e3f8eb95675d',
+          name: 'Granja Demo Los Llanos',
+          isDemo: true,
+          ownerId: demoUser.id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await storage.set('cryotech_access_token', 'demo-token');
+        await storage.set('cryotech_refresh_token', 'demo-refresh-token');
+        await storage.set('cryotech_user_profile', JSON.stringify(demoUser));
+        await storage.set('cryotech_companies', JSON.stringify([demoCompany]));
+        await storage.set('cryotech_company_id', demoCompany.id);
+        localStorage.setItem('cryotech_access_token', 'demo-token');
+        localStorage.setItem('cryotech_company_id', demoCompany.id);
+
+        useAuthStore.setState({
+          user: demoUser,
+          companies: [demoCompany as never],
+          activeCompanyId: demoCompany.id,
+          isAuthenticated: true,
+          isLoading: false,
+        });
+
+        await haptics.success();
+        toast.success('Entrando a Granja Demo (Modo Offline/Pruebas)');
+        window.location.hash = '#/';
+        navigate('/', { replace: true });
       }
     } finally {
       setDemoLoading(false);

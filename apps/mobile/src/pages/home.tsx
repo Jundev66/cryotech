@@ -6,11 +6,15 @@ import { haptics } from '@/lib/native';
 import { AppHeader } from '@/components/layout/app-header';
 import { Skull, Wheat, DollarSign, Bird, ChevronRight, Sparkles, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router';
+import { DEMO_STATS, DEMO_BATCHES } from '@/lib/demo-data';
 
 export function HomePage() {
   const navigate = useNavigate();
-  const activeCompanyId = useAuthStore((s) => s.activeCompanyId);
+  const { activeCompanyId, companies } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
+
+  const activeCompany = companies.find((c) => c.id === activeCompanyId);
+  const isDemo = activeCompany?.isDemo || activeCompany?.name?.toLowerCase().includes('demo');
 
   // Stats query
   const { data: stats, refetch: refetchStats } = useQuery({
@@ -18,8 +22,14 @@ export function HomePage() {
     queryFn: async () => {
       try {
         const res = await api.get('/dashboard/stats');
-        return res.data || {};
+        const d = res.data;
+        if (d && (Number(d.totalAlive) > 0 || Number(d.activeBirds) > 0 || Number(d.todayFeedKg) > 0)) {
+          return d;
+        }
+        if (isDemo) return DEMO_STATS;
+        return d || {};
       } catch {
+        if (isDemo) return DEMO_STATS;
         return {};
       }
     },
@@ -35,19 +45,28 @@ export function HomePage() {
           params: { status: 'breeding,for_sale', limit: 10 },
         });
         const data = res.data;
-        if (Array.isArray(data)) return data;
-        if (Array.isArray((data as unknown as { data?: unknown[] })?.data)) {
-          return (data as unknown as { data: unknown[] }).data;
-        }
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray((data as unknown as { data?: unknown[] })?.data)
+            ? (data as unknown as { data: unknown[] }).data
+            : [];
+        if (list.length > 0) return list;
+        if (isDemo) return DEMO_BATCHES;
         return [];
       } catch {
+        if (isDemo) return DEMO_BATCHES;
         return [];
       }
     },
     enabled: !!activeCompanyId,
   });
 
-  const batches = Array.isArray(batchesRaw) ? batchesRaw : [];
+  const batches =
+    Array.isArray(batchesRaw) && batchesRaw.length > 0
+      ? batchesRaw
+      : isDemo
+        ? DEMO_BATCHES
+        : [];
 
   const handleRefresh = async () => {
     setRefreshing(true);

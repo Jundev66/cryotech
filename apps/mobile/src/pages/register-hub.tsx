@@ -19,21 +19,34 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
+import { DEMO_BATCHES, DEMO_CLIENTS, DEMO_SALES } from '@/lib/demo-data';
+
 type FormType = 'daily_log' | 'sale' | 'payment' | 'purchase' | null;
 
 export function RegisterHubPage() {
-  const activeCompanyId = useAuthStore((s) => s.activeCompanyId);
+  const { activeCompanyId, companies } = useAuthStore();
   const enqueue = useSyncStore((s) => s.enqueue);
   const queryClient = useQueryClient();
   const [activeForm, setActiveForm] = useState<FormType>(null);
   const [loading, setLoading] = useState(false);
 
+  const activeCompany = companies.find((c) => c.id === activeCompanyId);
+  const isDemo = activeCompany?.isDemo || activeCompany?.name?.toLowerCase().includes('demo');
+
   // Queries for selectors
   const { data: batches = [] } = useQuery({
     queryKey: ['batches-select', activeCompanyId],
     queryFn: async () => {
-      const res = await api.get('/batches', { params: { status: 'breeding,for_sale' } });
-      return res.data?.data || res.data || [];
+      try {
+        const res = await api.get('/batches', { params: { status: 'breeding,for_sale' } });
+        const list = res.data?.data || res.data || [];
+        if (list.length > 0) return list;
+        if (isDemo) return DEMO_BATCHES;
+        return [];
+      } catch {
+        if (isDemo) return DEMO_BATCHES;
+        return [];
+      }
     },
     enabled: !!activeCompanyId,
   });
@@ -41,8 +54,16 @@ export function RegisterHubPage() {
   const { data: clients = [], refetch: refetchClients } = useQuery({
     queryKey: ['clients-select', activeCompanyId],
     queryFn: async () => {
-      const res = await api.get('/clients', { params: { limit: 100 } });
-      return res.data?.data || res.data || [];
+      try {
+        const res = await api.get('/clients', { params: { limit: 100 } });
+        const list = res.data?.data || res.data || [];
+        if (list.length > 0) return list;
+        if (isDemo) return DEMO_CLIENTS;
+        return [];
+      } catch {
+        if (isDemo) return DEMO_CLIENTS;
+        return [];
+      }
     },
     enabled: !!activeCompanyId,
   });
@@ -51,11 +72,19 @@ export function RegisterHubPage() {
   const { data: pendingSales = [], refetch: refetchSales, isFetching: fetchingSales } = useQuery({
     queryKey: ['sales-pending', activeCompanyId],
     queryFn: async () => {
-      const res = await api.get('/sales', {
-        params: { paymentStatus: 'pending,partial', limit: 50 },
-      });
-      const data = res.data;
-      return Array.isArray(data) ? data : data?.data || [];
+      try {
+        const res = await api.get('/sales', {
+          params: { paymentStatus: 'pending,partial', limit: 50 },
+        });
+        const data = res.data;
+        const list = Array.isArray(data) ? data : data?.data || [];
+        if (list.length > 0) return list;
+        if (isDemo) return DEMO_SALES;
+        return [];
+      } catch {
+        if (isDemo) return DEMO_SALES;
+        return [];
+      }
     },
     enabled: !!activeCompanyId,
   });

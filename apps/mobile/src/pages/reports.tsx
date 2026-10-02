@@ -45,16 +45,29 @@ interface BatchProfitability {
   exchangeRate: number;
 }
 
+import { DEMO_BATCH_REPORTS } from '@/lib/demo-data';
+
 export function ReportsPage() {
-  const activeCompanyId = useAuthStore((s) => s.activeCompanyId);
+  const { activeCompanyId, companies } = useAuthStore();
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+
+  const activeCompany = companies.find((c) => c.id === activeCompanyId);
+  const isDemo = activeCompany?.isDemo || activeCompany?.name?.toLowerCase().includes('demo');
 
   // Fetch all batches profitability
   const { data: batchReports = [], isLoading: isLoadingReports } = useQuery<BatchProfitability[]>({
     queryKey: ['reports-batch-profitability', activeCompanyId],
     queryFn: async () => {
-      const res = await api.get('/reports/batch-profitability');
-      return res.data || [];
+      try {
+        const res = await api.get('/reports/batch-profitability');
+        const list = res.data || [];
+        if (list.length > 0) return list;
+        if (isDemo) return DEMO_BATCH_REPORTS;
+        return [];
+      } catch {
+        if (isDemo) return DEMO_BATCH_REPORTS;
+        return [];
+      }
     },
     enabled: !!activeCompanyId,
   });

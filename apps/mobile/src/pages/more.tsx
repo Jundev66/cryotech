@@ -118,12 +118,19 @@ export function MorePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 pb-24">
+    <div className="min-h-screen bg-slate-950 pb-24 md:pb-12">
       <AppHeader title="Ajustes y Equipo" />
 
-      <main className="px-4 py-4 space-y-4 max-w-lg mx-auto">
+      <main className="px-4 md:px-8 py-5 space-y-6 max-w-5xl mx-auto">
+        <div>
+          <h2 className="text-xl md:text-2xl font-black text-slate-100 tracking-tight">Ajustes de Granja & Usuario</h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Administra tu sesión, sincronización de terreno y acceso de colaboradores.
+          </p>
+        </div>
+
         {/* User Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center gap-3.5">
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-teal-500/20 border border-teal-500/40 text-teal-300 font-black text-lg flex items-center justify-center">
             {user?.fullName?.charAt(0) || user?.email?.charAt(0) || 'U'}
           </div>

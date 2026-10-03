@@ -344,16 +344,19 @@ export function RegisterHubPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 pb-24">
+    <div className="min-h-screen bg-slate-950 pb-24 md:pb-12">
       <AppHeader title="Registrar Operación" />
 
-      <main className="px-4 py-4 space-y-4 max-w-lg mx-auto">
-        <p className="text-xs text-slate-400">
-          Selecciona el tipo de registro manual que deseas realizar:
-        </p>
+      <main className="px-4 md:px-8 py-5 space-y-6 max-w-5xl mx-auto">
+        <div>
+          <h2 className="text-xl md:text-2xl font-black text-slate-100 tracking-tight">Centro de Registros en Terreno</h2>
+          <p className="text-xs text-slate-400 mt-1">
+            Selecciona el tipo de movimiento o asienta cobros directos sin conexión.
+          </p>
+        </div>
 
-        {/* Options List */}
-        <div className="space-y-3">
+        {/* Options List (2 cols on desktop) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 md:gap-4">
           {/* Registro Diario */}
           <div
             onClick={() => openForm('daily_log')}

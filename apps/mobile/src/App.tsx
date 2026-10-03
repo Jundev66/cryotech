@@ -63,6 +63,8 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
+import { DesktopSidebar } from '@/components/layout/desktop-sidebar';
+
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore();
 
@@ -80,9 +82,21 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950">
-      {children}
-      <BottomNav />
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row">
+      {/* Desktop Sidebar (visible on md+) */}
+      <DesktopSidebar />
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col md:pl-64 min-w-0">
+        <div className="flex-1 w-full">
+          {children}
+        </div>
+      </div>
+
+      {/* Mobile Bottom Navigation (hidden on md+) */}
+      <div className="md:hidden">
+        <BottomNav />
+      </div>
     </div>
   );
 }

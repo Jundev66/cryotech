@@ -17,13 +17,24 @@ export function AppHeader({ title }: { title?: string }) {
   };
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 px-4 pt-4 pb-3 safe-top">
-      <div className="flex items-center justify-between">
-        {/* Company Picker or Title */}
+    <header className="sticky top-0 z-20 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 px-4 md:px-8 pt-4 pb-3 safe-top">
+      <div className="flex items-center justify-between max-w-6xl mx-auto w-full">
+        {/* Company Picker (Mobile) or Desktop Page Title */}
         <div>
-          {title ? (
-            <h1 className="text-lg font-bold text-slate-100">{title}</h1>
-          ) : (
+          <div className="hidden md:flex items-center gap-3">
+            <h1 className="text-xl font-black text-slate-100 tracking-tight">
+              {title || 'Panel de Granja en Terreno'}
+            </h1>
+            {activeCompany?.isDemo && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                Demostración Efímera
+              </span>
+            )}
+          </div>
+          <div className="md:hidden">
+            {title ? (
+              <h1 className="text-lg font-bold text-slate-100">{title}</h1>
+            ) : (
             <div className="relative">
               <button
                 onClick={() => {
@@ -84,7 +95,8 @@ export function AppHeader({ title }: { title?: string }) {
                 </div>
               )}
             </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Sync & Connectivity Pill */}

@@ -101,10 +101,10 @@ export function ReportsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 pb-24 text-slate-100">
+    <div className="min-h-screen bg-slate-950 pb-24 md:pb-12 text-slate-100">
       <AppHeader title="Reportes por Lote" />
 
-      <main className="px-4 py-4 space-y-4 max-w-lg mx-auto">
+      <main className="px-4 md:px-8 py-5 space-y-6 max-w-6xl mx-auto">
         {/* Batch Selector Bar */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">

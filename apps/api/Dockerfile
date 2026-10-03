@@ -12,8 +12,13 @@ WORKDIR /app
 # de la definición del workspace.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/shared-types/package.json ./packages/shared-types/
+COPY packages/tsconfig/package.json ./packages/tsconfig/
 COPY apps/api/package.json ./apps/api/
-RUN pnpm install --frozen-lockfile
+COPY apps/web/package.json ./apps/web/
+COPY apps/mobile/package.json ./apps/mobile/
+COPY services/webhook-buffer/package.json ./services/webhook-buffer/
+COPY services/whatsapp-flows/package.json ./services/whatsapp-flows/
+RUN pnpm install --frozen-lockfile --filter "@cryotech/api..."
 
 FROM base AS builder
 WORKDIR /app

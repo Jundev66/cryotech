@@ -1,8 +1,10 @@
 import axios from 'axios';
-import { storage } from '@/lib/native';
+import { storage, isNative } from '@/lib/native';
 
-// In Capacitor native, use full URL if provided; otherwise relative /api for web/proxy
-const BASE_URL = (import.meta as unknown as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL || '/api';
+// In Capacitor native (Android/iOS APK), use full URL; in Web/PWA, use relative /api so Vercel/proxy handles it same-origin without CORS
+const BASE_URL = isNative
+  ? ((import.meta as unknown as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL || 'https://cryotech-api.onrender.com/api')
+  : '/api';
 
 export const api = axios.create({
   baseURL: BASE_URL,

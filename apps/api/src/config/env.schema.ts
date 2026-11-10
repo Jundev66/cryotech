@@ -39,9 +39,27 @@ export const envSchema = z
     JWT_ACCESS_EXPIRATION: z.string().default('15m'),
     JWT_REFRESH_EXPIRATION: z.string().default('7d'),
 
-    // Exact origin, no wildcard: the API answers with credentials, and `*` is
-    // rejected by browsers in that mode anyway.
-    CORS_ORIGIN: z.string().url('CORS_ORIGIN debe ser un origen completo').default('http://localhost:3002'),
+    // Exact origin(s), no wildcard: the API answers with credentials, and `*` is
+    // rejected by browsers in that mode anyway. Supports a single URL or a
+    // comma-separated list of exact allowed origins.
+    CORS_ORIGIN: z
+      .string()
+      .default('http://localhost:3002')
+      .refine(
+        (val) => {
+          const list = val.split(',').map((s) => s.trim()).filter(Boolean);
+          if (list.length === 0) return false;
+          return list.every((item) => {
+            try {
+              new URL(item);
+              return true;
+            } catch {
+              return false;
+            }
+          });
+        },
+        { message: 'CORS_ORIGIN debe ser una URL válida o lista de URLs separadas por comas' },
+      ),
 
     // The buffer's pull token is a bearer credential; if it is set at all it has
     // to be long enough to be worth the name.

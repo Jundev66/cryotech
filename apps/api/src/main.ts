@@ -35,11 +35,33 @@ async function bootstrap() {
     }),
   );
 
-  // Validated at boot (config/env.schema.ts), so this is always a real origin.
+  // Exact origins only (validated at boot in config/env.schema.ts).
   // No wildcard: the API answers with credentials, and `*` plus credentials is
-  // rejected by browsers anyway.
+  // rejected by browsers anyway. Supports single or comma-separated origins.
+  const rawCors = process.env.CORS_ORIGIN || 'http://localhost:3002';
+  const configuredOrigins = rawCors
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  const allowedOrigins = new Set([
+    ...configuredOrigins,
+    'capacitor://localhost',
+    'http://localhost',
+    'http://localhost:3002',
+    'http://localhost:5173',
+    'https://mobile-ochre-pi.vercel.app',
+    'https://cryotech-main.vercel.app',
+  ]);
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN,
+    origin: (requestOrigin, callback) => {
+      // Allow requests with no origin header (e.g. mobile native plugins, curl, server-to-server)
+      if (!requestOrigin || allowedOrigins.has(requestOrigin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Company-Id'],

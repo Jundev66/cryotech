@@ -19,6 +19,8 @@ import {
   MoreVertical,
   PlusSquare,
   Clock,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -33,6 +35,7 @@ export function LoginPage() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const { login, isAuthenticated } = useAuthStore();
 
@@ -70,7 +73,11 @@ export function LoginPage() {
     setLoading(true);
     await haptics.light();
     try {
-      const res = await api.post('/auth/login', data);
+      const payload = {
+        email: data.email.trim().toLowerCase(),
+        password: data.password.trim(),
+      };
+      const res = await api.post('/auth/login', payload);
       await login(res.data.accessToken, res.data.refreshToken, res.data.user);
       await haptics.success();
       toast.success('¡Bienvenido!');
@@ -78,9 +85,10 @@ export function LoginPage() {
       navigate('/', { replace: true });
     } catch (err: unknown) {
       await haptics.error();
+      const axiosErr = err as { response?: { data?: { message?: string } } };
       const message =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message || 'Credenciales inválidas';
+        axiosErr.response?.data?.message ||
+        (axiosErr.response ? 'Credenciales inválidas' : 'Error de conexión con el servidor');
       toast.error(message);
     } finally {
       setLoading(false);
@@ -276,8 +284,11 @@ export function LoginPage() {
                   <input
                     {...register('email')}
                     type="email"
+                    inputMode="email"
                     autoCapitalize="none"
                     autoComplete="email"
+                    autoCorrect="off"
+                    spellCheck="false"
                     placeholder="propietario@granja.com"
                     className="w-full px-3.5 py-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-teal-500 text-xs transition-colors"
                   />
@@ -290,12 +301,31 @@ export function LoginPage() {
                   <label className="block text-[11px] font-semibold text-slate-300 mb-1 uppercase tracking-wider">
                     Contraseña
                   </label>
-                  <input
-                    {...register('password')}
-                    type="password"
-                    placeholder="••••••••••"
-                    className="w-full px-3.5 py-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-teal-500 text-xs transition-colors"
-                  />
+                  <div className="relative">
+                    <input
+                      {...register('password')}
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck="false"
+                      placeholder="••••••••••"
+                      className="w-full pl-3.5 pr-11 py-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-teal-500 text-xs transition-colors"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-200 transition-colors"
+                      aria-label={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4 text-slate-400" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
                   {errors.password && (
                     <p className="mt-1 text-[11px] text-red-400">{errors.password.message}</p>
                   )}

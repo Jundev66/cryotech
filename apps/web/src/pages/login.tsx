@@ -10,7 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { Logo } from '@/components/brand/logo';
 import { DemoLeadModal, type LeadInfo } from '@/components/landing/DemoLeadModal';
 import { apiMessage } from '@/lib/api-error';
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const { setUser } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoLeadOpen, setDemoLeadOpen] = useState(false);
 
@@ -34,7 +35,10 @@ export default function LoginPage() {
     setLoading(true);
     try {
       localStorage.removeItem('cryotech_company_id');
-      const data = await authApi.login(values);
+      const data = await authApi.login({
+        email: values.email.trim().toLowerCase(),
+        password: values.password.trim(),
+      });
       localStorage.setItem('cryotech_access_token', data.accessToken);
       localStorage.setItem('cryotech_refresh_token', data.refreshToken);
       setUser(data.user);
@@ -107,7 +111,17 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel>Correo electrónico</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="tu@correo.com" data-testid="login-email" {...field} />
+                      <Input
+                        type="email"
+                        inputMode="email"
+                        autoCapitalize="none"
+                        autoComplete="email"
+                        autoCorrect="off"
+                        spellCheck="false"
+                        placeholder="tu@correo.com"
+                        data-testid="login-email"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -120,7 +134,28 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel>Contraseña</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="Tu contraseña" data-testid="login-password" {...field} />
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? 'text' : 'password'}
+                          autoComplete="current-password"
+                          autoCapitalize="none"
+                          autoCorrect="off"
+                          spellCheck="false"
+                          placeholder="Tu contraseña"
+                          className="pr-10"
+                          data-testid="login-password"
+                          {...field}
+                        />
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                          aria-label={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

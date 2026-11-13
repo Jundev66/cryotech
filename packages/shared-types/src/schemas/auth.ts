@@ -115,6 +115,23 @@ export const memberPasswordSchema = z
   })
   .strict();
 
+export const demoLeadSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, 'El correo electrónico es requerido')
+    .email('Ingresa un correo electrónico válido')
+    .max(255),
+  fullName: z
+    .string()
+    .trim()
+    .max(120, 'Máximo 120 caracteres')
+    .optional()
+    .or(z.literal('')),
+});
+
+export type DemoLeadInput = z.infer<typeof demoLeadSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type UserProfileUpdateInput = z.infer<typeof userProfileUpdateSchema>;
 export type MemberAddInput = z.infer<typeof memberAddSchema>;

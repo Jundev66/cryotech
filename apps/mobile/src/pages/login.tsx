@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { loginSchema, type LoginInput } from '@cryotech/shared-types';
+import { loginSchema, demoLeadSchema, type LoginInput, type DemoLeadInput } from '@cryotech/shared-types';
 import { useAuthStore } from '@/stores/auth.store';
 import { haptics, storage } from '@/lib/native';
 import api from '@/api/client';
@@ -21,6 +21,9 @@ import {
   Clock,
   Eye,
   EyeOff,
+  AlertCircle,
+  Mail,
+  User,
 } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -33,14 +36,29 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoModalOpen, setDemoModalOpen] = useState(false);
-  const [demoEmail, setDemoEmail] = useState('');
-  const [demoName, setDemoName] = useState('');
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const { login, isAuthenticated } = useAuthStore();
+
+  const {
+    register: registerDemo,
+    handleSubmit: handleSubmitDemo,
+    reset: resetDemo,
+    formState: { errors: demoErrors },
+  } = useForm<DemoLeadInput>({
+    resolver: zodResolver(demoLeadSchema),
+    defaultValues: { email: '', fullName: '' },
+    mode: 'onTouched',
+  });
+
+  useEffect(() => {
+    if (demoModalOpen) {
+      resetDemo({ email: '', fullName: '' });
+    }
+  }, [demoModalOpen, resetDemo]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -395,46 +413,69 @@ export function LoginPage() {
             </p>
 
             <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!demoEmail.trim()) return;
-                onDemoSubmit(demoEmail, demoName);
-              }}
-              className="space-y-3"
+              onSubmit={handleSubmitDemo((data) => onDemoSubmit(data.email, data.fullName))}
+              noValidate
+              className="space-y-3 text-left"
             >
               <div>
-                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                  Correo Electrónico *
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Correo Electrónico *</span>
                 </label>
-                <input
-                  type="email"
-                  required
-                  autoFocus
-                  value={demoEmail}
-                  onChange={(e) => setDemoEmail(e.target.value)}
-                  placeholder="tu@correo.com"
-                  className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-teal-500"
-                />
+                <div className="relative">
+                  <input
+                    type="email"
+                    {...registerDemo('email')}
+                    autoFocus
+                    disabled={demoLoading}
+                    placeholder="tu@correo.com"
+                    className={`w-full px-3.5 py-3 rounded-xl bg-slate-950 border text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none transition-colors ${
+                      demoErrors.email
+                        ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
+                        : 'border-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30'
+                    }`}
+                  />
+                  {demoErrors.email && (
+                    <div className="absolute right-3 top-3 text-rose-400 pointer-events-none">
+                      <AlertCircle className="w-4 h-4" />
+                    </div>
+                  )}
+                </div>
+                {demoErrors.email && (
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-rose-400 font-medium animate-in fade-in">
+                    <span>{demoErrors.email.message}</span>
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                  Tu Nombre (Opcional)
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Tu Nombre (Opcional)</span>
                 </label>
                 <input
                   type="text"
-                  value={demoName}
-                  onChange={(e) => setDemoName(e.target.value)}
+                  {...registerDemo('fullName')}
+                  disabled={demoLoading}
                   placeholder="Ej. Juan Mata"
-                  className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-teal-500"
+                  className={`w-full px-3.5 py-3 rounded-xl bg-slate-950 border text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none transition-colors ${
+                    demoErrors.fullName
+                      ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
+                      : 'border-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30'
+                  }`}
                 />
+                {demoErrors.fullName && (
+                  <p className="mt-1 text-[11px] text-rose-400 font-medium animate-in fade-in">
+                    {demoErrors.fullName.message}
+                  </p>
+                )}
               </div>
 
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={demoLoading || !demoEmail.trim()}
-                  className="w-full py-3.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 disabled:opacity-50"
+                  disabled={demoLoading}
+                  className="w-full py-3.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {demoLoading ? (
                     <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />

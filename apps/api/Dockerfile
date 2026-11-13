@@ -18,7 +18,6 @@ COPY apps/web/package.json ./apps/web/
 COPY apps/mobile/package.json ./apps/mobile/
 COPY apps/landing/package.json ./apps/landing/
 COPY services/webhook-buffer/package.json ./services/webhook-buffer/
-COPY services/whatsapp-flows/package.json ./services/whatsapp-flows/
 RUN pnpm install --frozen-lockfile --filter "@cryotech/api..."
 
 FROM base AS builder

@@ -89,8 +89,8 @@ export function ChatPage() {
             onClick={toggleAiMode}
             className={`touch-active flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
               isAiMode
-                ? 'bg-purple-950/80 text-purple-300 border border-purple-700/60 shadow-sm shadow-purple-900/50'
-                : 'bg-teal-950/80 text-teal-300 border border-teal-700/60 shadow-sm shadow-teal-900/50'
+                ? 'bg-purple-950/80 text-purple-300 border border-purple-700/60'
+                : 'bg-teal-950/80 text-teal-300 border border-teal-700/60'
             }`}
           >
           {isAiMode ? (
@@ -324,7 +324,7 @@ export function ChatPage() {
                       <div className="flex items-center gap-2 pt-1.5">
                         <button
                           onClick={() => confirmDraft(msg.id)}
-                          className="touch-active flex-1 py-2.5 px-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-teal-950"
+                          className="touch-active flex-1 py-2.5 px-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5"
                         >
                           <CheckCircle2 className="w-4 h-4 stroke-[2.5]" />
                           <span>Confirmar y Guardar</span>

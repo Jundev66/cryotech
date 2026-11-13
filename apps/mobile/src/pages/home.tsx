@@ -105,7 +105,7 @@ export function HomePage() {
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => navigate('/register')}
-              className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md shadow-teal-500/20 cursor-pointer"
+              className="hidden md:inline-flex items-center gap-1.5 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold rounded-xl transition-colors cursor-pointer"
             >
               + Nuevo Registro
             </button>
@@ -124,10 +124,10 @@ export function HomePage() {
             haptics.light();
             navigate('/chat');
           }}
-          className="touch-active bg-gradient-to-r from-teal-950/70 via-slate-900 to-slate-900 border border-teal-500/30 rounded-3xl p-4 md:p-5 flex items-center justify-between cursor-pointer shadow-xl shadow-teal-950/20 hover:border-teal-500/50 transition-all"
+          className="touch-active bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 flex items-center justify-between cursor-pointer hover:border-teal-500/40 transition-colors"
         >
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-teal-500 flex items-center justify-center text-slate-950 shadow-md shadow-teal-500/30 shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-teal-500 flex items-center justify-center text-slate-950 shrink-0">
               <Sparkles className="w-6 h-6" />
             </div>
             <div>

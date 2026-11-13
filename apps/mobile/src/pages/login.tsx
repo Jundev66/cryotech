@@ -32,6 +32,9 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [demoLoading, setDemoLoading] = useState(false);
+  const [demoModalOpen, setDemoModalOpen] = useState(false);
+  const [demoEmail, setDemoEmail] = useState('');
+  const [demoName, setDemoName] = useState('');
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -95,12 +98,15 @@ export function LoginPage() {
     }
   };
 
-  const onDemoSubmit = async () => {
+  const onDemoSubmit = async (customEmail?: string, customName?: string) => {
     setDemoLoading(true);
     await haptics.light();
     try {
+      const payload = customEmail
+        ? { email: customEmail.trim(), fullName: customName?.trim() || undefined }
+        : undefined;
       // Intento en servidor ERP /api/auth/demo (Crea granja efímera de 2 horas)
-      const res = await api.post('/auth/demo');
+      const res = await api.post('/auth/demo', payload);
       const { accessToken, refreshToken, user, company } = res.data;
       if (company?.id) {
         localStorage.setItem('cryotech_company_id', company.id);
@@ -108,6 +114,7 @@ export function LoginPage() {
       }
       await login(accessToken, refreshToken, user);
       await haptics.success();
+      setDemoModalOpen(false);
       toast.success(`Entrando a ${company?.name || 'Granja Demo (Temporal)'}`);
       window.location.hash = '#/';
       navigate('/', { replace: true });
@@ -120,6 +127,7 @@ export function LoginPage() {
         });
         await login(res.data.accessToken, res.data.refreshToken, res.data.user);
         await haptics.success();
+        setDemoModalOpen(false);
         toast.success('Entrando a Demostración Temporal');
         window.location.hash = '#/';
         navigate('/', { replace: true });
@@ -127,8 +135,8 @@ export function LoginPage() {
         // Fallback local garantizado para modo offline
         const demoUser = {
           id: '11111111-1111-4111-a111-111111111111',
-          email: 'demo@cryotech.com',
-          fullName: 'Productor Demo (CryoTech)',
+          email: customEmail?.trim() || 'demo@cryotech.com',
+          fullName: customName?.trim() || 'Productor Demo (CryoTech)',
           phone: null,
           avatarUrl: null,
           createdAt: new Date().toISOString(),
@@ -136,7 +144,7 @@ export function LoginPage() {
         };
         const demoCompany = {
           id: '25aacb04-877b-4db0-a9dc-e3f8eb95675d',
-          name: 'Granja Demo (Temporal)',
+          name: customName ? `Granja ${customName.trim()}` : 'Granja Demo (Temporal)',
           isDemo: true,
           expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
           ownerId: demoUser.id,
@@ -160,6 +168,7 @@ export function LoginPage() {
         });
 
         await haptics.success();
+        setDemoModalOpen(false);
         toast.success('Entrando a Granja Demo (Modo Offline Temporal)');
         window.location.hash = '#/';
         navigate('/', { replace: true });
@@ -246,7 +255,7 @@ export function LoginPage() {
 
           <button
             type="button"
-            onClick={onDemoSubmit}
+            onClick={() => setDemoModalOpen(true)}
             disabled={demoLoading || loading}
             className="touch-active w-full py-4 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-2xl shadow-xl shadow-teal-500/25 flex items-center justify-center gap-2.5 text-sm transition-all disabled:opacity-50"
           >
@@ -361,6 +370,83 @@ export function LoginPage() {
           </span>
         </div>
       </div>
+
+      {/* Demo Lead Modal (Email obligatorio para trazabilidad, Nombre opcional) */}
+      {demoModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl safe-bottom space-y-4 animate-in fade-in slide-in-from-bottom-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-teal-400" />
+                <h3 className="text-sm font-bold text-slate-100">Prueba Demo CryoTech</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDemoModalOpen(false)}
+                disabled={demoLoading}
+                className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Ingresa tu correo para generar tu granja de prueba con datos biológicos y tesorería precargada.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!demoEmail.trim()) return;
+                onDemoSubmit(demoEmail, demoName);
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Correo Electrónico *
+                </label>
+                <input
+                  type="email"
+                  required
+                  autoFocus
+                  value={demoEmail}
+                  onChange={(e) => setDemoEmail(e.target.value)}
+                  placeholder="tu@correo.com"
+                  className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                  Tu Nombre (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={demoName}
+                  onChange={(e) => setDemoName(e.target.value)}
+                  placeholder="Ej. Juan Mata"
+                  className="w-full px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-teal-500"
+                />
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={demoLoading || !demoEmail.trim()}
+                  className="w-full py-3.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-teal-500/20 disabled:opacity-50"
+                >
+                  {demoLoading ? (
+                    <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <span>Entrar a la Demostración</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Install Instruction Modal for iOS / Android without automatic prompt */}
       {showInstallModal && (

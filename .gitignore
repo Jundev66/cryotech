@@ -59,3 +59,8 @@ apps/web/playwright-report/
 .agent/
 
 .vercel
+
+# Database dumps, binaries and crash logs
+*.sql
+*.apk
+hs_err_*.log

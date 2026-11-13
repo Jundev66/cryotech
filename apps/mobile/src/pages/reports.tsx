@@ -129,7 +129,7 @@ export function ReportsPage() {
                   }}
                   className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border shrink-0 ${
                     isSelected
-                      ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-md shadow-teal-500/20 font-bold'
+                      ? 'bg-teal-500 text-slate-950 border-teal-400 font-bold'
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -152,7 +152,7 @@ export function ReportsPage() {
         ) : (
           <>
             {/* Batch Identity Spotlight Header */}
-            <div className="bg-gradient-to-br from-teal-950/60 via-slate-900 to-slate-900 border border-teal-500/30 rounded-3xl p-5 shadow-lg shadow-teal-950/20">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <div className="flex items-center gap-2">

@@ -29,8 +29,9 @@ export class DemoService {
 
   /**
    * Crea una empresa efímera aislada con dataset semilla completo y tokens de acceso directo.
+   * Permite trazabilidad registrando el correo y nombre proporcionados.
    */
-  async createDemoSession() {
+  async createDemoSession(input?: { email?: string; fullName?: string }) {
     // 1. Candado de seguridad: Límite global de empresas demo concurrentes
     const activeDemoCount = await this.prisma.company.count({
       where: { isDemo: true },
@@ -52,7 +53,24 @@ export class DemoService {
     }
 
     const uniqueTag = Math.floor(1000 + Math.random() * 9000);
-    const demoEmail = `demo-${randomUUID().slice(0, 8)}@cryotech.demo`;
+    const cleanEmail = input?.email?.trim().toLowerCase();
+    const cleanName = input?.fullName?.trim();
+
+    // Trazabilidad: si viene correo real, verificar si ya existe en users para evitar colisión de unique
+    let demoEmail = `demo-${randomUUID().slice(0, 8)}@cryotech.demo`;
+    if (cleanEmail && cleanEmail.includes('@')) {
+      const existing = await this.prisma.user.findUnique({ where: { email: cleanEmail } });
+      if (existing) {
+        const [userPart, domainPart] = cleanEmail.split('@');
+        demoEmail = `${userPart}+demo${uniqueTag}@${domainPart}`;
+      } else {
+        demoEmail = cleanEmail;
+      }
+    }
+
+    const demoFullName = cleanName || `Productor Demo #${uniqueTag}`;
+    const companyName = cleanName ? `Granja de ${cleanName}` : `Granja Demo #${uniqueTag}`;
+
     const randomPassword = randomBytes(24).toString('hex');
     const passwordHash = await bcrypt.hash(randomPassword, 10);
     const expiresAt = new Date(Date.now() + DEMO_LIFETIME_HOURS * 60 * 60 * 1000);
@@ -63,7 +81,7 @@ export class DemoService {
         data: {
           email: demoEmail,
           passwordHash,
-          fullName: `Productor Demo #${uniqueTag}`,
+          fullName: demoFullName,
         },
       });
 
@@ -71,7 +89,7 @@ export class DemoService {
       const company = await tx.company.create({
         data: {
           ownerId: user.id,
-          name: `Granja Demo #${uniqueTag}`,
+          name: companyName,
           phone: '+58 412 0000000',
           address: 'Carretera Nacional, Sector El Rosal, Galpón Demo',
           isDemo: true,

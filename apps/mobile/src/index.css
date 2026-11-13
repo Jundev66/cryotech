@@ -2,50 +2,217 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+  CryoTech Mobile — tema "agro editorial".
+  Las páginas escriben clases tailwind estándar (slate/teal/amber/…) que aquí
+  se remapean a tokens semánticos. En modo claro la escala neutra se invierte
+  (950 = papel, 100 = tinta), de modo que la jerarquía existente se conserva.
+*/
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --color-card: var(--paper-2);
+  --color-card-foreground: var(--ink);
+  --color-popover: var(--paper-2);
+  --color-popover-foreground: var(--ink);
+  --color-primary: var(--brand);
+  --color-primary-foreground: var(--paper-2);
+  --color-secondary: var(--raise);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--raise);
+  --color-muted-foreground: var(--ink-muted);
+  --color-accent: var(--clay);
+  --color-accent-foreground: var(--paper-2);
+  --color-destructive: var(--danger);
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-ring: var(--brand);
+
+  /* Neutros (slate) — invertidos en claro */
+  --color-slate-50: var(--paper-2);
+  --color-slate-100: var(--ink);
+  --color-slate-200: var(--ink-strong);
+  --color-slate-300: var(--ink-body);
+  --color-slate-400: var(--ink-muted);
+  --color-slate-500: var(--ink-soft);
+  --color-slate-600: var(--ink-soft);
+  --color-slate-700: var(--raise-2);
+  --color-slate-800: var(--raise);
+  --color-slate-900: var(--paper-2);
+  --color-slate-950: var(--paper);
+
+  /* Marca (teal -> verde) */
+  --color-teal-950: var(--brand-tint);
+  --color-teal-900: var(--brand-tint);
+  --color-teal-800: var(--brand-strong);
+  --color-teal-700: var(--brand);
+  --color-teal-600: var(--brand);
+  --color-teal-500: var(--brand);
+  --color-teal-400: var(--brand-bright);
+  --color-teal-300: var(--brand-bright);
+  --color-teal-200: var(--brand-bright);
+
+  /* Éxito (emerald) */
+  --color-emerald-950: var(--ok-tint);
+  --color-emerald-800: var(--ok);
+  --color-emerald-700: var(--ok);
+  --color-emerald-500: var(--ok);
+  --color-emerald-400: var(--ok-bright);
+  --color-emerald-300: var(--ok-bright);
+  --color-emerald-200: var(--ok-bright);
+
+  /* Aviso (amber -> ocre) */
+  --color-amber-950: var(--warn-tint);
+  --color-amber-800: var(--warn);
+  --color-amber-500: var(--warn);
+  --color-amber-400: var(--warn-bright);
+  --color-amber-300: var(--warn-bright);
+  --color-amber-200: var(--warn-bright);
+
+  /* Peligro (red / rose -> ladrillo) */
+  --color-red-950: var(--danger-tint);
+  --color-red-800: var(--danger);
+  --color-red-600: var(--danger);
+  --color-red-500: var(--danger);
+  --color-red-400: var(--danger-bright);
+  --color-red-300: var(--danger-bright);
+  --color-rose-950: var(--danger-tint);
+  --color-rose-900: var(--danger-tint);
+  --color-rose-800: var(--danger);
+  --color-rose-400: var(--danger-bright);
+  --color-rose-300: var(--danger-bright);
+
+  /* Info (blue / sky -> denim) */
+  --color-blue-950: var(--info-tint);
+  --color-blue-500: var(--info);
+  --color-blue-400: var(--info-bright);
+  --color-sky-400: var(--info-bright);
+
+  /* Acento (purple -> terracota) */
+  --color-purple-950: var(--clay-tint);
+  --color-purple-900: var(--clay-tint);
+  --color-purple-700: var(--clay);
+  --color-purple-400: var(--clay-bright);
+  --color-purple-300: var(--clay-bright);
+  --color-orange-400: var(--clay-bright);
+
+  /* Tipografía */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype",
+    "Times New Roman", serif;
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 }
 
+/* ---------- Modo CLARO (papel cálido, tinta profunda, verde bosque) ---------- */
 :root {
-  --radius: 0.85rem;
-  --background: oklch(0.12 0.01 75);
-  --foreground: oklch(0.93 0.006 75);
-  --card: oklch(0.16 0.012 75);
-  --card-foreground: oklch(0.93 0.006 75);
-  --popover: oklch(0.16 0.012 75);
-  --popover-foreground: oklch(0.93 0.006 75);
-  --primary: oklch(0.62 0.14 175);
-  --primary-foreground: oklch(0.14 0.02 175);
-  --secondary: oklch(0.21 0.015 75);
-  --secondary-foreground: oklch(0.93 0.006 75);
-  --muted: oklch(0.21 0.015 75);
-  --muted-foreground: oklch(0.60 0.01 75);
-  --accent: oklch(0.28 0.04 75);
-  --accent-foreground: oklch(0.93 0.006 75);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 11%);
-  --ring: oklch(0.62 0.14 175);
+  color-scheme: light;
+  --radius: 0.7rem;
+
+  --paper: oklch(0.972 0.012 85);
+  --paper-2: oklch(0.995 0.004 85);
+  --raise: oklch(0.93 0.015 85);
+  --raise-2: oklch(0.895 0.017 85);
+  --line: oklch(0.90 0.016 85);
+  --line-strong: oklch(0.82 0.02 85);
+
+  --ink-soft: oklch(0.58 0.02 80);
+  --ink-muted: oklch(0.47 0.02 80);
+  --ink-body: oklch(0.37 0.02 150);
+  --ink-strong: oklch(0.28 0.02 150);
+  --ink: oklch(0.205 0.02 150);
+
+  --brand: oklch(0.44 0.085 150);
+  --brand-strong: oklch(0.37 0.08 150);
+  --brand-bright: oklch(0.50 0.10 150);
+  --brand-tint: oklch(0.93 0.03 150);
+
+  --clay: oklch(0.60 0.12 45);
+  --clay-bright: oklch(0.64 0.125 45);
+  --clay-tint: oklch(0.94 0.03 55);
+
+  --ok: oklch(0.50 0.10 152);
+  --ok-bright: oklch(0.56 0.11 152);
+  --ok-tint: oklch(0.94 0.03 152);
+
+  --warn: oklch(0.68 0.12 72);
+  --warn-bright: oklch(0.60 0.12 68);
+  --warn-tint: oklch(0.95 0.04 80);
+
+  --danger: oklch(0.53 0.15 30);
+  --danger-bright: oklch(0.57 0.16 30);
+  --danger-tint: oklch(0.94 0.03 30);
+
+  --info: oklch(0.50 0.08 250);
+  --info-bright: oklch(0.55 0.09 250);
+  --info-tint: oklch(0.94 0.02 250);
+}
+
+/* ---------- Modo OSCURO (carbón verde cálido, tinta crema) ---------- */
+.dark {
+  color-scheme: dark;
+
+  --paper: oklch(0.19 0.014 150);
+  --paper-2: oklch(0.235 0.014 150);
+  --raise: oklch(0.285 0.014 150);
+  --raise-2: oklch(0.335 0.014 150);
+  --line: oklch(1 0 0 / 10%);
+  --line-strong: oklch(1 0 0 / 16%);
+
+  --ink-soft: oklch(0.52 0.01 150);
+  --ink-muted: oklch(0.68 0.012 100);
+  --ink-body: oklch(0.82 0.012 90);
+  --ink-strong: oklch(0.90 0.01 85);
+  --ink: oklch(0.95 0.008 85);
+
+  --brand: oklch(0.62 0.095 150);
+  --brand-strong: oklch(0.70 0.10 150);
+  --brand-bright: oklch(0.78 0.11 150);
+  --brand-tint: oklch(0.28 0.04 150);
+
+  --clay: oklch(0.68 0.11 45);
+  --clay-bright: oklch(0.74 0.11 45);
+  --clay-tint: oklch(0.30 0.05 45);
+
+  --ok: oklch(0.66 0.10 152);
+  --ok-bright: oklch(0.75 0.11 152);
+  --ok-tint: oklch(0.28 0.04 152);
+
+  --warn: oklch(0.78 0.11 74);
+  --warn-bright: oklch(0.83 0.11 74);
+  --warn-tint: oklch(0.30 0.05 74);
+
+  --danger: oklch(0.64 0.14 28);
+  --danger-bright: oklch(0.71 0.14 28);
+  --danger-tint: oklch(0.30 0.06 28);
+
+  --info: oklch(0.68 0.09 250);
+  --info-bright: oklch(0.75 0.09 250);
+  --info-tint: oklch(0.30 0.04 250);
+}
+
+@layer base {
+  html,
+  body {
+    background-color: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--brand) 30%, transparent);
+  }
 }
 
 /* Native Mobile Feel Optimizations */

@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { useSyncStore } from '@/stores/sync.store';
 import { AppHeader } from '@/components/layout/app-header';
 import { haptics } from '@/lib/native';
+import { getStoredTheme, setThemeMode, type ThemeMode } from '@/lib/theme';
 import api from '@/api/client';
 import { toast } from 'sonner';
 import {
@@ -20,6 +21,9 @@ import {
   MoreVertical,
   PlusSquare,
   AlertTriangle,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -36,8 +40,15 @@ export function MorePage() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>(() => getStoredTheme());
 
   const activeCompany = companies.find((c) => c.id === activeCompanyId);
+
+  const handleThemeChange = async (mode: ThemeMode) => {
+    await haptics.light();
+    setThemeMode(mode);
+    setThemeModeState(mode);
+  };
 
   useEffect(() => {
     const standalone =
@@ -161,9 +172,44 @@ export function MorePage() {
           </div>
         )}
 
+        {/* Appearance */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Sun className="w-4 h-4 text-teal-400" />
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+              Apariencia
+            </h4>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                { mode: 'light' as ThemeMode, label: 'Claro', Icon: Sun },
+                { mode: 'dark' as ThemeMode, label: 'Oscuro', Icon: Moon },
+                { mode: 'system' as ThemeMode, label: 'Sistema', Icon: Monitor },
+              ]
+            ).map(({ mode, label, Icon }) => {
+              const isActive = themeMode === mode;
+              return (
+                <button
+                  key={mode}
+                  onClick={() => handleThemeChange(mode)}
+                  className={`touch-active flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl border text-[11px] font-semibold transition-colors ${
+                    isActive
+                      ? 'bg-teal-500/10 border-teal-500/40 text-teal-400'
+                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* PWA Install Card */}
         {!isStandalone && (
-          <div className="bg-gradient-to-r from-teal-950/50 to-slate-900 border border-teal-500/30 rounded-2xl p-4 flex items-center justify-between gap-3">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-teal-500 text-slate-950 flex items-center justify-center font-bold">
                 <Smartphone className="w-5 h-5" />

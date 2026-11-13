@@ -1,6 +1,7 @@
 import { Controller, Post, Body, UsePipes, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { DemoService } from '../demo/demo.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { RegistrationEnabledGuard } from '../../common/guards/registration-enabled.guard';
 import {
@@ -23,7 +24,16 @@ const FIFTEEN_MINUTES = 15 * 60_000;
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly demoService: DemoService,
+  ) {}
+
+  @Post('demo')
+  @Throttle({ default: { ttl: FIFTEEN_MINUTES, limit: 10 } })
+  createDemoSession(@Body() body?: { email?: string; fullName?: string }) {
+    return this.demoService.createDemoSession(body);
+  }
 
   @Post('register')
   @UseGuards(RegistrationEnabledGuard)

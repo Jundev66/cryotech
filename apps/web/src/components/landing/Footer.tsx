@@ -5,7 +5,7 @@ interface FooterProps {
   onOpenWaitlist: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onOpenWaitlist }) => {
+export const Footer: React.FC<FooterProps> = ({ onOpenWaitlist: _onOpenWaitlist }) => {
   const webAppLoginUrl = window.location.port === '3005' ? 'http://localhost:3002/login' : '/login';
 
   return (

@@ -7,7 +7,7 @@ interface HeroProps {
   demoLoading?: boolean;
 }
 
-export const Hero: React.FC<HeroProps> = ({ onOpenWaitlist, onStartDemo, demoLoading }) => {
+export const Hero: React.FC<HeroProps> = ({ onOpenWaitlist: _onOpenWaitlist, onStartDemo, demoLoading }) => {
   return (
     <section className="relative pt-24 pb-16 sm:pt-32 sm:pb-20 overflow-hidden">
       {/* Background glow */}

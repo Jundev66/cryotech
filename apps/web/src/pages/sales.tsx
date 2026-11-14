@@ -4,9 +4,7 @@ import { keepPreviousData, useQuery, useMutation, useQueryClient } from '@tansta
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  saleSchema,
   salePaymentSchema,
-  type SaleInput,
   type SalePaymentInput,
   type Sale,
   SALE_TYPE_LABELS,
@@ -36,7 +34,6 @@ import { PageHeader } from '@/components/layout/page-header';
 import { SearchInput } from '@/components/ui/search-input';
 import { PaginationControls } from '@/components/ui/pagination-controls';
 import { useListSearch } from '@/hooks/use-list-search';
-import { ClientCombobox } from '@/components/forms/client-combobox';
 import { BulkSaleDialog } from '@/components/forms/bulk-sale-dialog';
 import { apiMessage } from '@/lib/api-error';
 import { todayLocalIso } from '@/lib/dates';
@@ -50,7 +47,6 @@ function isOverdue(sale: Sale): boolean {
 
 export default function SalesPage() {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -84,20 +80,6 @@ export default function SalesPage() {
   });
 
   const sellBatches = batches?.filter((b) => b.status === 'for_sale' || b.status === 'breeding') ?? [];
-
-  const createMutation = useMutation({
-    mutationFn: (data: SaleInput) => salesApi.create({
-      ...data,
-      saleDate: todayLocalIso(),
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-      toast.success('Venta registrada');
-      setOpen(false);
-      form.reset();
-    },
-    onError: (error) => toast.error(apiMessage(error, 'Error al registrar venta')),
-  });
 
   const deleteMutation = useMutation({
     mutationFn: salesApi.remove,
@@ -144,22 +126,6 @@ export default function SalesPage() {
     );
     if (ok) voidPaymentMutation.mutate(paymentId);
   }
-
-  const form = useForm<SaleInput>({
-    resolver: zodResolver(saleSchema),
-    defaultValues: {
-      batchId: '',
-      clientId: undefined,
-      saleType: 'live',
-      quantity: 0,
-      weightKg: undefined,
-      pricePerKg: undefined,
-      pricePerUnit: undefined,
-      totalAmount: 0,
-      dueDate: '',
-      notes: '',
-    },
-  });
 
   const paymentForm = useForm<SalePaymentInput>({
     resolver: zodResolver(salePaymentSchema),

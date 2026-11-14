@@ -13,6 +13,7 @@ export default tseslint.config(
       '**/build/**',
       '**/node_modules/**',
       '**/.turbo/**',
+      '**/.vercel/**',
       '**/coverage/**',
       '**/playwright-report/**',
       '**/test-results/**',

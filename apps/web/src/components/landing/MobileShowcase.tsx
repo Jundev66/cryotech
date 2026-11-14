@@ -21,7 +21,6 @@ import {
   Check,
   CheckCircle2,
   ArrowRight,
-  Download,
   ChevronRight,
 } from 'lucide-react';
 
@@ -31,7 +30,7 @@ interface MobileShowcaseProps {
 
 type MobileTab = 'home' | 'register' | 'chat' | 'reports' | 'offline';
 
-export const MobileShowcase: React.FC<MobileShowcaseProps> = ({ onOpenWaitlist }) => {
+export const MobileShowcase: React.FC<MobileShowcaseProps> = ({ onOpenWaitlist: _onOpenWaitlist }) => {
   const [activeTab, setActiveTab] = useState<MobileTab>('home');
 
   const tabDetails: Record<

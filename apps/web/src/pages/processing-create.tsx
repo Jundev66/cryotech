@@ -14,7 +14,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Loader2, Scissors, Scale, DollarSign } from 'lucide-react';
 import { apiMessage } from '@/lib/api-error';
-import { formatDate } from '@cryotech/shared-types';
 import { toast } from 'sonner';
 
 export default function ProcessingCreatePage() {

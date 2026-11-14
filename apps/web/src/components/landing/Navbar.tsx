@@ -6,7 +6,7 @@ interface NavbarProps {
   onOpenWaitlist: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenWaitlist }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onOpenWaitlist: _onOpenWaitlist }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 

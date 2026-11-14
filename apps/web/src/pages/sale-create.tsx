@@ -45,7 +45,6 @@ export default function SaleCreatePage() {
   const weightKg = form.watch('weightKg') || 0;
   const pricePerKg = form.watch('pricePerKg') || 0;
   const pricePerUnit = form.watch('pricePerUnit') || 0;
-  const saleType = form.watch('saleType');
 
   // Cálculo dinámico de total
   const calculatedTotal = pricePerKg && weightKg

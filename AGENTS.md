@@ -252,6 +252,7 @@ La base de datos mantiene únicamente dos tenants permanentes:
 |---|---|---|
 | **Granja Mata** (`088ca19e-32a1-44b6-a778-57b5aef6d83b`) | **Producción Real** (Dueño: `juan@cryotech.com`) | **INTOCABLE**. Ningún script de test o limpieza puede borrar ni modificar datos aquí salvo operaciones reales ordenadas por el usuario. |
 | **ZZ Empresa de Pruebas** (`25aacb04-877b-4db0-a9dc-e3f8eb95675d`) | **Pruebas / E2E Única** (Dueño: `zz-pruebas@cryotech.test`) | Tenant dedicado exclusivo para pruebas de desarrollo y suites E2E fijas. |
+| **Granja Demo** (`33333333-3333-4333-a333-333333333333`) | **Demostración Limpia** (Dueño: `demo@cryotech.com`) | Tenant demo permanente para presentaciones y operaciones normales sin datos iniciales. |
 
 ### Tenants Efímeros (Modo Demo)
 

@@ -31,7 +31,7 @@ export function RegisterHubPage() {
   const [loading, setLoading] = useState(false);
 
   const activeCompany = companies.find((c) => c.id === activeCompanyId);
-  const isDemo = activeCompany?.isDemo || activeCompany?.name?.toLowerCase().includes('demo');
+  const isDemo = Boolean(activeCompany?.isDemo);
 
   // Queries for selectors
   const { data: batches = [] } = useQuery({

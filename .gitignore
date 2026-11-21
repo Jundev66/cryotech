@@ -62,5 +62,6 @@ apps/web/playwright-report/
 
 # Database dumps, binaries and crash logs
 *.sql
+!apps/api/prisma/migrations/**/*.sql
 *.apk
 hs_err_*.log

@@ -52,7 +52,7 @@ export function ReportsPage() {
   const [selectedBatchId, setSelectedBatchId] = useState<string>('');
 
   const activeCompany = companies.find((c) => c.id === activeCompanyId);
-  const isDemo = activeCompany?.isDemo || activeCompany?.name?.toLowerCase().includes('demo');
+  const isDemo = Boolean(activeCompany?.isDemo);
 
   // Fetch all batches profitability
   const { data: batchReports = [], isLoading: isLoadingReports } = useQuery<BatchProfitability[]>({

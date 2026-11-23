@@ -137,7 +137,17 @@ export function LoginPage() {
         : undefined;
       // Intento en endpoint /demo/leads o /auth/demo
       const endpoint = payload ? '/demo/leads' : '/auth/demo';
-      const res = await api.post(endpoint, payload);
+      let res;
+      try {
+        res = await api.post(endpoint, payload);
+      } catch (err: unknown) {
+        const errorObj = err as { response?: { status?: number } };
+        if (errorObj?.response?.status === 404 && endpoint === '/demo/leads') {
+          res = await api.post('/auth/demo', payload);
+        } else {
+          throw err;
+        }
+      }
       const { accessToken, refreshToken, user, company } = res.data;
       if (company?.id) {
         localStorage.setItem('cryotech_company_id', company.id);

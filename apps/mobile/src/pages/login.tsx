@@ -135,7 +135,7 @@ export function LoginPage() {
             source: 'pwa_mobile' as const,
           }
         : undefined;
-      // Intento en endpoint /demo/leads o /auth/demo
+      // Intento en endpoint oficial /demo/leads con captura persistente y fallback a /auth/demo
       const endpoint = payload ? '/demo/leads' : '/auth/demo';
       let res;
       try {

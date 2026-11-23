@@ -19,7 +19,9 @@
     "landing:build": "pnpm --filter @cryotech/landing build",
     "landing:preview": "pnpm --filter @cryotech/landing preview",
     "e2e": "pnpm --filter @cryotech/web e2e",
-    "e2e:clean": "pnpm --filter @cryotech/api e2e:clean --apply"
+    "e2e:clean": "pnpm --filter @cryotech/api e2e:clean --apply",
+    "check:secrets": "node scripts/security/prevent-secrets.mjs --all",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

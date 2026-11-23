@@ -61,7 +61,12 @@ description: Auditor de seguridad enfocado en OWASP Top 10, los tres guards de l
 - [ ] Validación en cliente (UX) **y** en servidor (seguridad)
 - [ ] Límites de longitud en campos de texto
 
-### Data Protection
+### Data Protection & Secrets (TOLERANCIA CERO)
+- [ ] Cero cadenas de conexión a base de datos (`postgres://`, etc.) en código, scripts o tests
+- [ ] Cero tokens (`npg_*`, `ghp_*`, `sk-*`, `ant-api*`), claves privadas o hashes quemados
+- [ ] Ningún script de diagnóstico ad-hoc con credenciales dentro de `apps/` o `scripts/`
+- [ ] Todo acceso a BD en scripts lee de `process.env` o usa CLI externo
+- [ ] El pre-commit hook de prevención de secretos (`pnpm check:secrets`) pasa al 100%
 - [ ] Sin PII en logs
 - [ ] Secretos solo en entorno; `.env` en `.gitignore` y con permisos `600`
 - [ ] Sin claves en el bundle del cliente

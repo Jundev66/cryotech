@@ -292,6 +292,26 @@ La base de datos mantiene únicamente dos tenants permanentes:
    `wrangler secret put` para el Worker
 5. Los scripts de `scripts/` leen credenciales del entorno, nunca literales
 
+### Protocolo de Seguridad Absoluta para Agentes e IA (INQUEBRANTABLE)
+
+1. **PROHIBICIÓN TOTAL DE QUEMAR SECRETOS EN CÓDIGO:**
+   - Queda estrictamente prohibido escribir cadenas de conexión (`postgres://<user>:<password>@<host>`), claves privadas, tokens (`npg_*`, `ghp_*`, `sk-*`, `ant-api*`), contraseñas o secretos en cualquier archivo dentro del repositorio.
+   - Aplica a código fuente, tests, documentación, scripts de soporte y archivos temporales.
+
+2. **SCRIPTS DE DIAGNÓSTICO O PRUEBA DESCARTABLES:**
+   - NUNCA crear scripts de consulta rápida dentro del árbol de Git (`apps/api/scripts/`, etc.) que contengan credenciales literales.
+   - Si se necesita ejecutar consultas ad-hoc directas a base de datos, DEBEN ejecutarse a través de variables de entorno (`process.env.DATABASE_URL`), `psql` o en el directorio temporal de scratch fuera del árbol de Git.
+   - Cualquier archivo de scratch o temporal debe eliminarse de inmediato tras la validación y NUNCA incluirse en `git add`.
+
+3. **VERIFICACIÓN PRE-COMMIT AUTOMATIZADA Y OBLIGATORIA:**
+   - El hook `.githooks/pre-commit` ejecuta `node scripts/security/prevent-secrets.mjs` antes de cada commit.
+   - Está terminantemente prohibido utilizar `git commit --no-verify` para eludir la inspección de secretos.
+   - Todo agente debe validar `git status` y `git diff --cached` conscientemente antes de commitear.
+
+4. **ARCHIVOS DE ENTORNO (.env):**
+   - NUNCA forzar la adición (`git add -f`) de archivos `.env`, `.env.neon`, `.env.local` o `.pem`.
+   - Solo `.env.example` está permitido en el repositorio y debe contener únicamente placeholders documentados (e.g. `postgresql://user:password@localhost:5432/dbname`).
+
 ## Flujo de Desarrollo
 
 ```

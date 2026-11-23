@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# CryoTech Automated Secret Scanner Hook
+# Blocks any commit containing credentials, tokens, or forbidden files.
+
+node scripts/security/prevent-secrets.mjs

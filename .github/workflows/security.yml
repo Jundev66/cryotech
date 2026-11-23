@@ -53,6 +53,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: CryoTech Secret Scanner
+        run: node scripts/security/prevent-secrets.mjs --all
+
   quality:
     name: Types, lint and unit tests
     runs-on: ubuntu-latest

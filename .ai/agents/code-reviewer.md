@@ -53,7 +53,8 @@ description: Revisor de código crítico con checklist estructurado. Evalúa PRs
 
 ### Security
 - [ ] Input validado con Zod en server-side
-- [ ] No secrets en código
+- [ ] Cero secretos o URLs de conexión hardcodeadas en código o scripts (Tolerancia Cero)
+- [ ] No scripts temporales con credenciales en el repositorio
 - [ ] No exposición de datos cross-tenant
 - [ ] Sanitización de user input
 

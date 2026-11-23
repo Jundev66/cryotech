@@ -1,0 +1,21 @@
+# CryoTech - Reglas Estrictas para Agentes e Inteligencia Artificial
+
+## 🛑 PROTOCOLO DE SEGURIDAD ABSOLUTA (TOLERANCIA CERO)
+
+1. **PROHIBICIÓN TOTAL DE HARDCODING DE SECRETOS Y CREDENCIALES:**
+   - NUNCA escribas credenciales, cadenas de conexión (`postgres://<user>:<password>@<host>`), contraseñas, tokens de API (`npg_*`, `ghp_*`, `sk-*`, `ant-api*`), claves privadas ni firmas en NINGÚN archivo dentro del repositorio.
+   - Aplica a código de producción, tests, scripts de soporte, mocks y archivos temporales.
+
+2. **SCRIPTS DE DIAGNÓSTICO Y PRUEBAS RÁPIDAS:**
+   - NUNCA crees scripts ad-hoc dentro del árbol de Git (`apps/api/scripts/`, etc.) que contengan credenciales quemadas.
+   - Para consultas o verificaciones a bases de datos, utiliza SIEMPRE variables de entorno (`process.env.DATABASE_URL`), el CLI de `psql`, o ejecuta scripts en un directorio externo de scratch fuera del repositorio.
+   - Cualquier archivo de scratch debe eliminarse de inmediato tras la verificación y NUNCA agregarse a Git (`git add`).
+
+3. **VERIFICACIÓN OBLIGATORIA PRE-COMMIT:**
+   - Todo commit debe pasar el hook de seguridad `.githooks/pre-commit` (`pnpm run check:secrets`).
+   - NUNCA uses `git commit --no-verify` para saltear el chequeo de secretos.
+   - Revisa SIEMPRE `git status` y `git diff --cached` antes de realizar un commit.
+
+4. **ARCHIVOS .env Y SECRETOS DE ENTORNO:**
+   - NUNCA agregues archivos `.env`, `.env.neon`, `.env.local` ni `.pem` al stage (`git add`).
+   - El único archivo versionado permitido es `.env.example`, el cual solo debe contener variables vacías o placeholders documentados.

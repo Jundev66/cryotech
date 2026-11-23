@@ -34,6 +34,11 @@ yarn-error.log*
 .env.*
 !.env.example
 
+# Scratch and ad-hoc scripts (never track)
+scratch/
+*.scratch.*
+apps/api/scripts/temp-*
+
 # typescript
 *.tsbuildinfo
 

@@ -115,23 +115,52 @@ export const memberPasswordSchema = z
   })
   .strict();
 
-export const demoLeadSchema = z.object({
+export const leadSourceSchema = z.enum(['erp_landing', 'erp_login', 'pwa_mobile']);
+export type LeadSource = z.infer<typeof leadSourceSchema>;
+
+export const leadStatusSchema = z.enum(['new', 'contacted', 'qualified', 'converted', 'discarded']);
+export type LeadStatus = z.infer<typeof leadStatusSchema>;
+
+export const createDemoLeadSchema = z.object({
+  fullName: z
+    .string()
+    .trim()
+    .min(2, 'Ingresa tu nombre o el de tu granja')
+    .max(120, 'Máximo 120 caracteres'),
+  phone: z
+    .string()
+    .trim()
+    .min(7, 'Ingresa un número de WhatsApp o teléfono válido')
+    .max(30, 'Máximo 30 caracteres'),
   email: z
     .string()
     .trim()
     .toLowerCase()
-    .min(1, 'El correo electrónico es requerido')
     .email('Ingresa un correo electrónico válido')
-    .max(255),
-  fullName: z
-    .string()
-    .trim()
-    .max(120, 'Máximo 120 caracteres')
+    .max(255)
     .optional()
     .or(z.literal('')),
+  farmSize: z
+    .string()
+    .trim()
+    .max(50)
+    .optional()
+    .or(z.literal('')),
+  source: leadSourceSchema.default('erp_landing'),
+  notes: z.string().max(500).optional(),
 });
 
-export type DemoLeadInput = z.infer<typeof demoLeadSchema>;
+export type CreateDemoLeadInput = z.infer<typeof createDemoLeadSchema>;
+
+export const updateDemoLeadStatusSchema = z.object({
+  status: leadStatusSchema,
+  notes: z.string().max(1000).optional(),
+});
+
+export type UpdateDemoLeadStatusInput = z.infer<typeof updateDemoLeadStatusSchema>;
+
+export const demoLeadSchema = createDemoLeadSchema;
+export type DemoLeadInput = CreateDemoLeadInput;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type UserProfileUpdateInput = z.infer<typeof userProfileUpdateSchema>;
 export type MemberAddInput = z.infer<typeof memberAddSchema>;

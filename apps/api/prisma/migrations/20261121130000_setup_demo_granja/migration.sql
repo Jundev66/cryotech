@@ -78,7 +78,7 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 -- Default product categories for Granja Demo
-INSERT INTO "product_category_configs" ("id", "company_id", "name", "slug", "created_at")
+INSERT INTO "product_categories" ("id", "company_id", "name", "slug", "created_at")
 VALUES
   (gen_random_uuid(), '33333333-3333-4333-a333-333333333333', 'Alimento', 'feed', NOW()),
   (gen_random_uuid(), '33333333-3333-4333-a333-333333333333', 'Pollos Bebé', 'chicks', NOW()),

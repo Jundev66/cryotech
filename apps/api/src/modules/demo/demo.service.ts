@@ -6,6 +6,7 @@ import { MeasurementUnitsService } from '../measurement-units/measurement-units.
 import { ProductCategoriesService } from '../product-categories/product-categories.service';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
+import { CreateDemoLeadInput, UpdateDemoLeadStatusInput } from '@cryotech/shared-types';
 
 const DEMO_LIFETIME_HOURS = 2;
 const MAX_CONCURRENT_DEMOS = 30;
@@ -670,6 +671,95 @@ export class DemoService {
           expiresAt,
         },
       };
+    });
+  }
+
+  /**
+   * Captura un lead de prospecto interesado en la demo y aprovisiona el entorno demo.
+   */
+  async captureLeadAndCreateSession(input: CreateDemoLeadInput, clientIp?: string) {
+    const ipHash = clientIp ? createHash('sha256').update(clientIp).digest('hex') : null;
+
+    const lead = await this.prisma.demoLead.create({
+      data: {
+        fullName: input.fullName.trim(),
+        phone: input.phone.trim(),
+        email: input.email?.trim().toLowerCase() || null,
+        farmSize: input.farmSize?.trim() || null,
+        source: (input.source as any) || 'erp_landing',
+        ipHash,
+        notes: input.notes?.trim() || null,
+      },
+    });
+
+    this.logger.log(`Nuevo lead registrado [${lead.id}] - ${lead.fullName} (${lead.phone}) desde ${lead.source}`);
+
+    const session = await this.createDemoSession({
+      email: input.email,
+      fullName: input.fullName,
+    });
+
+    return {
+      ...session,
+      leadId: lead.id,
+    };
+  }
+
+  /**
+   * Consulta paginada de prospectos (leads) para el backoffice de administracion.
+   */
+  async listLeads(params?: { page?: number; limit?: number; status?: string; source?: string }) {
+    const page = Math.max(1, Number(params?.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(params?.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (params?.status) {
+      where.status = params.status;
+    }
+    if (params?.source) {
+      where.source = params.source;
+    }
+
+    const [leads, total, countsByStatus] = await Promise.all([
+      this.prisma.demoLead.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.demoLead.count({ where }),
+      this.prisma.demoLead.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+    ]);
+
+    return {
+      data: leads,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+      stats: countsByStatus.reduce((acc, curr) => {
+        acc[curr.status] = curr._count._all;
+        return acc;
+      }, {} as Record<string, number>),
+    };
+  }
+
+  /**
+   * Actualiza el estado o notas de un prospecto.
+   */
+  async updateLeadStatus(id: string, status: string, notes?: string) {
+    return this.prisma.demoLead.update({
+      where: { id },
+      data: {
+        status: status as any,
+        ...(notes !== undefined && { notes: notes.trim() }),
+      },
     });
   }
 }

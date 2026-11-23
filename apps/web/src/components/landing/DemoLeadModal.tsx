@@ -1,16 +1,28 @@
 import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { demoLeadSchema, type DemoLeadInput } from '@cryotech/shared-types';
-import { X, Sparkles, Loader2, ArrowRight, ShieldCheck, Mail, User, AlertCircle } from 'lucide-react';
+import { createDemoLeadSchema, type CreateDemoLeadInput } from '@cryotech/shared-types';
+import {
+  X,
+  Sparkles,
+  Loader2,
+  ArrowRight,
+  ShieldCheck,
+  Mail,
+  User,
+  Phone,
+  Layers,
+  AlertCircle,
+} from 'lucide-react';
 
-export type LeadInfo = DemoLeadInput;
+export type LeadInfo = CreateDemoLeadInput;
 
 interface DemoLeadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (lead: LeadInfo) => void;
   isLoading: boolean;
+  source?: 'erp_landing' | 'erp_login';
 }
 
 export const DemoLeadModal: React.FC<DemoLeadModalProps> = ({
@@ -18,26 +30,36 @@ export const DemoLeadModal: React.FC<DemoLeadModalProps> = ({
   onClose,
   onSubmit,
   isLoading,
+  source = 'erp_landing',
 }) => {
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
-  } = useForm<DemoLeadInput>({
-    resolver: zodResolver(demoLeadSchema),
+  } = useForm<CreateDemoLeadInput>({
+    resolver: zodResolver(createDemoLeadSchema),
     defaultValues: {
-      email: '',
       fullName: '',
+      phone: '',
+      email: '',
+      farmSize: '500-2000',
+      source,
     },
     mode: 'onTouched',
   });
 
   useEffect(() => {
     if (isOpen) {
-      reset({ email: '', fullName: '' });
+      reset({
+        fullName: '',
+        phone: '',
+        email: '',
+        farmSize: '500-2000',
+        source,
+      });
     }
-  }, [isOpen, reset]);
+  }, [isOpen, reset, source]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -53,7 +75,7 @@ export const DemoLeadModal: React.FC<DemoLeadModalProps> = ({
 
   if (!isOpen) return null;
 
-  const onFormSubmit = (data: DemoLeadInput) => {
+  const onFormSubmit = (data: CreateDemoLeadInput) => {
     try {
       const existing = JSON.parse(localStorage.getItem('cryotech_demo_leads') || '[]');
       existing.push({ ...data, timestamp: new Date().toISOString() });
@@ -61,13 +83,26 @@ export const DemoLeadModal: React.FC<DemoLeadModalProps> = ({
     } catch {
       // fallback
     }
-    onSubmit(data);
+    onSubmit({
+      ...data,
+      source,
+    });
+  };
+
+  const handleSkip = () => {
+    onSubmit({
+      fullName: 'Productor Invitado',
+      phone: '+58 000 0000000',
+      email: '',
+      farmSize: '500-2000',
+      source,
+    });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-md rounded-3xl bg-[#090e0c] border border-emerald-500/40 p-6 sm:p-8 shadow-2xl shadow-emerald-950/90 text-left">
-        {/* Close */}
+        {/* Close Button */}
         <button
           type="button"
           onClick={onClose}
@@ -79,75 +114,139 @@ export const DemoLeadModal: React.FC<DemoLeadModalProps> = ({
         </button>
 
         {/* Badge & Header */}
-        <div className="mb-6 space-y-2">
+        <div className="mb-5 space-y-1.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Acceso Instantáneo a la Demo</span>
           </div>
           <h3 className="text-xl sm:text-2xl font-bold text-white font-display">
-            Prueba CryoTech en Vivo
+            Personaliza tu Demostración
           </h3>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Ingresa tu correo para generar tu granja avícola de demostración con datos reales de producción y tesorería.
+            Ingresa tus datos para generar un entorno con datos acordes a tu escala productiva.
           </p>
         </div>
 
-        {/* Form with noValidate to disable ugly native HTML tooltips */}
-        <form onSubmit={handleSubmit(onFormSubmit)} noValidate className="space-y-4 text-xs">
+        {/* Form */}
+        <form onSubmit={handleSubmit(onFormSubmit)} noValidate className="space-y-3.5 text-xs">
+          {/* Nombre o Granja */}
           <div>
-            <label className="block text-slate-300 font-medium mb-1.5 flex items-center justify-between">
+            <label className="block text-slate-300 font-medium mb-1 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Correo Electrónico *</span>
+                <User className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Tu Nombre o Granja *</span>
               </span>
             </label>
             <div className="relative">
               <input
-                type="email"
-                {...register('email')}
+                type="text"
+                {...register('fullName')}
                 autoFocus
                 disabled={isLoading}
-                placeholder="tu@correo.com"
+                placeholder="Ej. Carlos Mata / Granja El Sol"
                 className={`w-full bg-[#131b17] text-white px-3.5 py-2.5 rounded-xl border text-xs placeholder:text-slate-500 transition-colors focus:outline-none ${
-                  errors.email
+                  errors.fullName
                     ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
                     : 'border-emerald-500/30 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/30'
                 }`}
               />
-              {errors.email && (
+              {errors.fullName && (
                 <div className="absolute right-3 top-2.5 text-rose-400 pointer-events-none">
                   <AlertCircle className="w-4 h-4" />
                 </div>
               )}
             </div>
-            {errors.email && (
-              <p className="mt-1.5 flex items-center gap-1 text-[11px] text-rose-400 font-medium animate-in fade-in">
-                <span>{errors.email.message}</span>
+            {errors.fullName && (
+              <p className="mt-1 text-[11px] text-rose-400 font-medium">
+                {errors.fullName.message}
               </p>
             )}
           </div>
 
+          {/* Telefono / WhatsApp y Correo en 2 columnas */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-300 font-medium mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>WhatsApp / Teléfono *</span>
+                </span>
+              </label>
+              <div className="relative">
+                <input
+                  type="tel"
+                  {...register('phone')}
+                  disabled={isLoading}
+                  placeholder="+58 412 1234567"
+                  className={`w-full bg-[#131b17] text-white px-3.5 py-2.5 rounded-xl border text-xs placeholder:text-slate-500 font-mono transition-colors focus:outline-none ${
+                    errors.phone
+                      ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
+                      : 'border-emerald-500/30 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/30'
+                  }`}
+                />
+                {errors.phone && (
+                  <div className="absolute right-3 top-2.5 text-rose-400 pointer-events-none">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+              {errors.phone && (
+                <p className="mt-1 text-[11px] text-rose-400 font-medium">
+                  {errors.phone.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-slate-300 font-medium mb-1 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Correo Electrónico</span>
+                </span>
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  {...register('email')}
+                  disabled={isLoading}
+                  placeholder="carlos@correo.com"
+                  className={`w-full bg-[#131b17] text-white px-3.5 py-2.5 rounded-xl border text-xs placeholder:text-slate-500 transition-colors focus:outline-none ${
+                    errors.email
+                      ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
+                      : 'border-emerald-500/30 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/30'
+                  }`}
+                />
+                {errors.email && (
+                  <div className="absolute right-3 top-2.5 text-rose-400 pointer-events-none">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+              {errors.email && (
+                <p className="mt-1 text-[11px] text-rose-400 font-medium">
+                  {errors.email.message}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Capacidad / Poblacion */}
           <div>
-            <label className="block text-slate-300 font-medium mb-1.5 flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-slate-400" />
-              <span>Tu Nombre (Opcional)</span>
+            <label className="block text-slate-300 font-medium mb-1 flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-slate-400" />
+              <span>Capacidad / Población de Aves</span>
             </label>
-            <input
-              type="text"
-              {...register('fullName')}
+            <select
+              {...register('farmSize')}
               disabled={isLoading}
-              placeholder="Ej. Juan Mata"
-              className={`w-full bg-[#131b17] text-white px-3.5 py-2.5 rounded-xl border text-xs placeholder:text-slate-500 transition-colors focus:outline-none ${
-                errors.fullName
-                  ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
-                  : 'border-emerald-500/30 focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400/30'
-              }`}
-            />
-            {errors.fullName && (
-              <p className="mt-1.5 text-[11px] text-rose-400 font-medium animate-in fade-in">
-                {errors.fullName.message}
-              </p>
-            )}
+              className="w-full bg-[#131b17] text-white px-3.5 py-2.5 rounded-xl border border-emerald-500/30 focus:border-emerald-400 focus:outline-none text-xs"
+            >
+              <option value="500-2000">500 a 2,000 aves (Pequeño productor)</option>
+              <option value="2000-10000">2,000 a 10,000 aves (Mediano productor)</option>
+              <option value="10000-30000">10,000 a 30,000 aves (Comercial)</option>
+              <option value="30000+">Más de 30,000 aves (Industrial)</option>
+              <option value="investor">Iniciando nuevo proyecto / Inversionista</option>
+            </select>
           </div>
 
           <div className="pt-2 space-y-2">
@@ -167,6 +266,15 @@ export const DemoLeadModal: React.FC<DemoLeadModalProps> = ({
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={handleSkip}
+              className="w-full py-2 text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              Omitir e ingresar como invitado anónimo
             </button>
           </div>
 

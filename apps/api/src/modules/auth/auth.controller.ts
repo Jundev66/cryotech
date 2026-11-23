@@ -1,5 +1,6 @@
-import { Controller, Post, Body, UsePipes, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, UsePipes, UseGuards, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { DemoService } from '../demo/demo.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -31,7 +32,24 @@ export class AuthController {
 
   @Post('demo')
   @Throttle({ default: { ttl: FIFTEEN_MINUTES, limit: 10 } })
-  createDemoSession(@Body() body?: { email?: string; fullName?: string }) {
+  createDemoSession(
+    @Body() body?: { email?: string; fullName?: string; phone?: string; farmSize?: string; source?: string },
+    @Req() req?: Request,
+  ) {
+    if (body?.phone && body?.fullName) {
+      const forwarded = req?.headers['x-forwarded-for'];
+      const clientIp = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : req?.ip || '';
+      return this.demoService.captureLeadAndCreateSession(
+        {
+          fullName: body.fullName,
+          phone: body.phone,
+          email: body.email || '',
+          farmSize: body.farmSize || '',
+          source: (body.source as any) || 'erp_landing',
+        },
+        clientIp,
+      );
+    }
     return this.demoService.createDemoSession(body);
   }
 

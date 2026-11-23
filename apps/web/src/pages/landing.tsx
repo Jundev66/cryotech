@@ -40,7 +40,7 @@ export default function LandingPage() {
       localStorage.removeItem('cryotech_company_id');
 
       const data = await authApi.createDemoSession(
-        lead ? { email: lead.email, fullName: lead.fullName } : undefined,
+        lead ? { ...lead, source: 'erp_landing' } : undefined,
       );
       localStorage.setItem('cryotech_access_token', data.accessToken);
       localStorage.setItem('cryotech_refresh_token', data.refreshToken);

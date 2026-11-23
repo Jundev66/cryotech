@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { loginSchema, demoLeadSchema, type LoginInput, type DemoLeadInput } from '@cryotech/shared-types';
+import {
+  loginSchema,
+  createDemoLeadSchema,
+  type LoginInput,
+  type CreateDemoLeadInput,
+} from '@cryotech/shared-types';
 import { useAuthStore } from '@/stores/auth.store';
 import { haptics, storage } from '@/lib/native';
 import api from '@/api/client';
@@ -24,6 +29,7 @@ import {
   AlertCircle,
   Mail,
   User,
+  Phone,
 } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -48,15 +54,15 @@ export function LoginPage() {
     handleSubmit: handleSubmitDemo,
     reset: resetDemo,
     formState: { errors: demoErrors },
-  } = useForm<DemoLeadInput>({
-    resolver: zodResolver(demoLeadSchema),
-    defaultValues: { email: '', fullName: '' },
+  } = useForm<CreateDemoLeadInput>({
+    resolver: zodResolver(createDemoLeadSchema),
+    defaultValues: { fullName: '', phone: '', email: '', source: 'pwa_mobile' },
     mode: 'onTouched',
   });
 
   useEffect(() => {
     if (demoModalOpen) {
-      resetDemo({ email: '', fullName: '' });
+      resetDemo({ fullName: '', phone: '', email: '', source: 'pwa_mobile' });
     }
   }, [demoModalOpen, resetDemo]);
 
@@ -116,15 +122,22 @@ export function LoginPage() {
     }
   };
 
-  const onDemoSubmit = async (customEmail?: string, customName?: string) => {
+  const onDemoSubmit = async (data?: Partial<CreateDemoLeadInput>) => {
     setDemoLoading(true);
     await haptics.light();
     try {
-      const payload = customEmail
-        ? { email: customEmail.trim(), fullName: customName?.trim() || undefined }
+      const payload = data?.phone && data?.fullName
+        ? {
+            fullName: data.fullName.trim(),
+            phone: data.phone.trim(),
+            email: data.email?.trim() || undefined,
+            farmSize: data.farmSize?.trim() || undefined,
+            source: 'pwa_mobile' as const,
+          }
         : undefined;
-      // Intento en servidor ERP /api/auth/demo (Crea granja efímera de 2 horas)
-      const res = await api.post('/auth/demo', payload);
+      // Intento en endpoint /demo/leads o /auth/demo
+      const endpoint = payload ? '/demo/leads' : '/auth/demo';
+      const res = await api.post(endpoint, payload);
       const { accessToken, refreshToken, user, company } = res.data;
       if (company?.id) {
         localStorage.setItem('cryotech_company_id', company.id);
@@ -153,16 +166,16 @@ export function LoginPage() {
         // Fallback local garantizado para modo offline
         const demoUser = {
           id: '11111111-1111-4111-a111-111111111111',
-          email: customEmail?.trim() || 'demo@cryotech.com',
-          fullName: customName?.trim() || 'Productor Demo (CryoTech)',
-          phone: null,
+          email: data?.email?.trim() || 'demo@cryotech.com',
+          fullName: data?.fullName?.trim() || 'Productor Demo (CryoTech)',
+          phone: data?.phone?.trim() || null,
           avatarUrl: null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
         const demoCompany = {
           id: '25aacb04-877b-4db0-a9dc-e3f8eb95675d',
-          name: customName ? `Granja ${customName.trim()}` : 'Granja Demo (Temporal)',
+          name: data?.fullName ? `Granja ${data.fullName.trim()}` : 'Granja Demo (Temporal)',
           isDemo: true,
           expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
           ownerId: demoUser.id,
@@ -409,69 +422,99 @@ export function LoginPage() {
             </div>
 
             <p className="text-xs text-slate-400 leading-relaxed">
-              Ingresa tu correo para generar tu granja de prueba con datos biológicos y tesorería precargada.
+              Ingresa tus datos para generar tu granja de prueba con datos biológicos y tesorería precargada.
             </p>
 
             <form
-              onSubmit={handleSubmitDemo((data) => onDemoSubmit(data.email, data.fullName))}
+              onSubmit={handleSubmitDemo((data) => onDemoSubmit(data))}
               noValidate
               className="space-y-3 text-left"
             >
               <div>
                 <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-teal-400" />
-                  <span>Correo Electrónico *</span>
+                  <User className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Tu Nombre o Granja *</span>
                 </label>
                 <div className="relative">
                   <input
-                    type="email"
-                    {...registerDemo('email')}
+                    type="text"
+                    {...registerDemo('fullName')}
                     autoFocus
                     disabled={demoLoading}
-                    placeholder="tu@correo.com"
-                    className={`w-full px-3.5 py-3 rounded-xl bg-slate-950 border text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none transition-colors ${
-                      demoErrors.email
+                    placeholder="Ej. Carlos Mata / Granja El Sol"
+                    className={`w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none transition-colors ${
+                      demoErrors.fullName
                         ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
                         : 'border-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30'
                     }`}
                   />
-                  {demoErrors.email && (
-                    <div className="absolute right-3 top-3 text-rose-400 pointer-events-none">
+                  {demoErrors.fullName && (
+                    <div className="absolute right-3 top-2.5 text-rose-400 pointer-events-none">
                       <AlertCircle className="w-4 h-4" />
                     </div>
                   )}
                 </div>
-                {demoErrors.email && (
-                  <p className="mt-1 flex items-center gap-1 text-[11px] text-rose-400 font-medium animate-in fade-in">
-                    <span>{demoErrors.email.message}</span>
+                {demoErrors.fullName && (
+                  <p className="mt-1 text-[11px] text-rose-400 font-medium">
+                    {demoErrors.fullName.message}
                   </p>
                 )}
               </div>
 
               <div>
                 <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Tu Nombre (Opcional)</span>
+                  <Phone className="w-3.5 h-3.5 text-teal-400" />
+                  <span>WhatsApp / Teléfono *</span>
                 </label>
-                <input
-                  type="text"
-                  {...registerDemo('fullName')}
-                  disabled={demoLoading}
-                  placeholder="Ej. Juan Mata"
-                  className={`w-full px-3.5 py-3 rounded-xl bg-slate-950 border text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none transition-colors ${
-                    demoErrors.fullName
-                      ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
-                      : 'border-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30'
-                  }`}
-                />
-                {demoErrors.fullName && (
-                  <p className="mt-1 text-[11px] text-rose-400 font-medium animate-in fade-in">
-                    {demoErrors.fullName.message}
+                <div className="relative">
+                  <input
+                    type="tel"
+                    {...registerDemo('phone')}
+                    disabled={demoLoading}
+                    placeholder="+58 412 1234567"
+                    className={`w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border text-xs text-slate-100 placeholder:text-slate-600 font-mono focus:outline-none transition-colors ${
+                      demoErrors.phone
+                        ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
+                        : 'border-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30'
+                    }`}
+                  />
+                  {demoErrors.phone && (
+                    <div className="absolute right-3 top-2.5 text-rose-400 pointer-events-none">
+                      <AlertCircle className="w-4 h-4" />
+                    </div>
+                  )}
+                </div>
+                {demoErrors.phone && (
+                  <p className="mt-1 text-[11px] text-rose-400 font-medium">
+                    {demoErrors.phone.message}
                   </p>
                 )}
               </div>
 
-              <div className="pt-2">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Correo Electrónico (Opcional)</span>
+                </label>
+                <input
+                  type="email"
+                  {...registerDemo('email')}
+                  disabled={demoLoading}
+                  placeholder="carlos@correo.com"
+                  className={`w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none transition-colors ${
+                    demoErrors.email
+                      ? 'border-rose-500/80 focus:border-rose-400 focus:ring-1 focus:ring-rose-500/40'
+                      : 'border-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30'
+                  }`}
+                />
+                {demoErrors.email && (
+                  <p className="mt-1 text-[11px] text-rose-400 font-medium">
+                    {demoErrors.email.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-2 space-y-2">
                 <button
                   type="submit"
                   disabled={demoLoading}
@@ -482,6 +525,15 @@ export function LoginPage() {
                   ) : (
                     <span>Entrar a la Demostración</span>
                   )}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={demoLoading}
+                  onClick={() => onDemoSubmit(undefined)}
+                  className="w-full py-2 text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  Omitir e ingresar como invitado anónimo
                 </button>
               </div>
             </form>

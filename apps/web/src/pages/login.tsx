@@ -61,7 +61,7 @@ export default function LoginPage() {
       localStorage.removeItem('cryotech_company_id');
 
       const data = await authApi.createDemoSession(
-        lead ? { email: lead.email, fullName: lead.fullName } : undefined,
+        lead ? { ...lead, source: 'erp_login' } : undefined,
       );
       localStorage.setItem('cryotech_access_token', data.accessToken);
       localStorage.setItem('cryotech_refresh_token', data.refreshToken);
@@ -206,6 +206,7 @@ export default function LoginPage() {
         onClose={() => setDemoLeadOpen(false)}
         onSubmit={onStartDemoWithLead}
         isLoading={demoLoading}
+        source="erp_login"
       />
     </>
   );
